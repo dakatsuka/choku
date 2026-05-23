@@ -109,6 +109,11 @@ val iter :
 The exact multipart streaming API needs its own design after the body contract
 is settled.
 
+As an interim adapter, `Multipart.of_request_limited ~max_size` may consume a
+streaming request body into memory through `Body.to_string_limited` and then use
+the buffered multipart parser. This keeps memory usage explicit but does not
+replace the future streaming multipart parser.
+
 ## Contracts To Preserve
 
 - `Request.t` remains immutable.

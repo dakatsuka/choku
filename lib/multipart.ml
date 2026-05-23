@@ -3,6 +3,8 @@ type error =
   | Unsupported_content_type of string
   | Missing_boundary
   | Malformed_body
+  | Body_too_large
+  | Unexpected_end_of_body
 
 module Part = struct
   type t = {
@@ -239,7 +241,7 @@ let decode ~boundary body =
           in
           loop [] first_part_start
 
-let of_request request =
+let boundary_of_request request =
   match Headers.get "content-type" (Request.headers request) with
   | None -> Error Missing_content_type
   | Some content_type -> (
@@ -249,8 +251,22 @@ let of_request request =
       else
         match parameter "boundary" parameters with
         | None | Some "" -> Error Missing_boundary
-        | Some boundary ->
-            decode ~boundary (Body.to_string (Request.body request)))
+        | Some boundary -> Ok boundary)
+
+let of_request request =
+  match boundary_of_request request with
+  | Error _ as error -> error
+  | Ok boundary -> decode ~boundary (Body.to_string (Request.body request))
+
+let of_request_limited ~max_size request =
+  if max_size < 0 then invalid_arg "negative max_size";
+  match boundary_of_request request with
+  | Error _ as error -> error
+  | Ok boundary -> (
+      match Body.to_string_limited ~max_size (Request.body request) with
+      | Ok body -> decode ~boundary body
+      | Error Body.Body_too_large -> Error Body_too_large
+      | Error Body.Unexpected_end_of_body -> Error Unexpected_end_of_body)
 
 let pp_error formatter = function
   | Missing_content_type ->
@@ -261,3 +277,7 @@ let pp_error formatter = function
       Format.pp_print_string formatter "missing multipart boundary"
   | Malformed_body ->
       Format.pp_print_string formatter "malformed multipart body"
+  | Body_too_large ->
+      Format.pp_print_string formatter "multipart body too large"
+  | Unexpected_end_of_body ->
+      Format.pp_print_string formatter "unexpected end of multipart body"

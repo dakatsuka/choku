@@ -70,6 +70,12 @@ case-insensitively and extracts a non-empty `boundary` parameter. The boundary
 may be token-like or quoted. The parser does not scan for a boundary when the
 parameter is absent.
 
+`Multipart.of_request_limited ~max_size request` performs the same content-type
+and boundary validation, then reads `Request.body request` with
+`Body.to_string_limited ~max_size`. This lets handlers that may receive
+server-created streaming bodies opt into a bounded in-memory multipart parse.
+It is still the buffered parser internally and does not expose streaming parts.
+
 ## Contracts
 
 The first implementation should add:
@@ -83,6 +89,8 @@ module Multipart : sig
     | Unsupported_content_type of string
     | Missing_boundary
     | Malformed_body
+    | Body_too_large
+    | Unexpected_end_of_body
 
   module Part : sig
     type t
@@ -99,6 +107,7 @@ module Multipart : sig
 
   val decode : boundary:string -> string -> (t, error) result
   val of_request : Request.t -> (t, error) result
+  val of_request_limited : max_size:int -> Request.t -> (t, error) result
   val parts : t -> Part.t list
   val get : string -> t -> Part.t option
   val get_all : string -> t -> Part.t list

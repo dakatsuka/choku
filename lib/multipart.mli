@@ -9,6 +9,8 @@ type error =
   | Unsupported_content_type of string
   | Missing_boundary
   | Malformed_body
+  | Body_too_large
+  | Unexpected_end_of_body
 
 module Part : sig
   type t
@@ -47,10 +49,24 @@ val decode : boundary:string -> string -> (t, error) result
     [Error Malformed_body] when [body] is not valid multipart syntax. *)
 
 val of_request : Request.t -> (t, error) result
-(** [of_request request] parses [request]'s body as [multipart/form-data].
+(** [of_request request] parses [request]'s buffered body as
+    [multipart/form-data].
 
     The request must have [Content-Type: multipart/form-data] with a non-empty
     [boundary] parameter. Media type matching is case-insensitive. *)
+
+val of_request_limited : max_size:int -> Request.t -> (t, error) result
+(** [of_request_limited ~max_size request] parses [request]'s body as
+    [multipart/form-data] after reading at most [max_size] bytes into memory.
+
+    This is the bounded request helper for code that may receive streaming
+    request bodies.
+
+    Returns [Error Body_too_large] when the request body exceeds [max_size] and
+    [Error Unexpected_end_of_body] when a streaming request body ends before its
+    declared length.
+
+    @raise Invalid_argument if [max_size] is negative. *)
 
 val parts : t -> Part.t list
 (** [parts t] returns all parts in insertion order. *)

@@ -1,5 +1,7 @@
 open Alcotest
 
+[@@@alert "-internal"]
+
 let boundary = "AaB03x"
 
 let multipart_body =
@@ -16,6 +18,7 @@ let multipart_body =
    --AaB03x--\r\n"
 
 let request ?content_type body =
+  let body = Camelio.Body.string body in
   let headers =
     match content_type with
     | None -> Camelio.Headers.empty
@@ -23,7 +26,17 @@ let request ?content_type body =
         Camelio.Headers.add "content-type" value Camelio.Headers.empty
   in
   Camelio.Request.make ~meth:Camelio.Method.POST ~target:"/upload" ~headers
-    ~body:(Camelio.Body.string body)
+    ~body
+
+let request_with_body ?content_type body =
+  let headers =
+    match content_type with
+    | None -> Camelio.Headers.empty
+    | Some value ->
+        Camelio.Headers.add "content-type" value Camelio.Headers.empty
+  in
+  Camelio.Request.make ~meth:Camelio.Method.POST ~target:"/upload" ~headers
+    ~body
 
 let multipart_error = of_pp Camelio.Multipart.pp_error
 
@@ -130,6 +143,74 @@ let test_of_request_extracts_quoted_boundary () =
   let multipart = Camelio.Multipart.of_request request |> expect_multipart in
   check int "part count" 2 (List.length (Camelio.Multipart.parts multipart))
 
+let test_of_request_limited_extracts_quoted_boundary () =
+  let request =
+    request
+      ~content_type:"Multipart/Form-Data; boundary=\"AaB03x\"; charset=utf-8"
+      multipart_body
+  in
+  let multipart =
+    Camelio.Multipart.of_request_limited
+      ~max_size:(String.length multipart_body)
+      request
+    |> expect_multipart
+  in
+  check int "part count" 2 (List.length (Camelio.Multipart.parts multipart))
+
+let test_of_request_limited_rejects_body_too_large () =
+  let request =
+    request ~content_type:"multipart/form-data; boundary=AaB03x" multipart_body
+  in
+  check
+    (result reject multipart_error)
+    "body too large" (Error Camelio.Multipart.Body_too_large)
+    (Camelio.Multipart.of_request_limited
+       ~max_size:(String.length multipart_body - 1)
+       request)
+
+let test_of_request_limited_rejects_malformed_body () =
+  let request =
+    request ~content_type:"multipart/form-data; boundary=AaB03x" "not multipart"
+  in
+  check
+    (result reject multipart_error)
+    "malformed" (Error Camelio.Multipart.Malformed_body)
+    (Camelio.Multipart.of_request_limited ~max_size:20 request)
+
+let test_of_request_limited_rejects_unexpected_end_of_body () =
+  let body =
+    Camelio.Body.Internal.streaming
+      ~content_length:(String.length multipart_body)
+      (Eio.Flow.string_source (String.sub multipart_body 0 10))
+  in
+  let request =
+    request_with_body ~content_type:"multipart/form-data; boundary=AaB03x" body
+  in
+  check
+    (result reject multipart_error)
+    "unexpected end" (Error Camelio.Multipart.Unexpected_end_of_body)
+    (Camelio.Multipart.of_request_limited
+       ~max_size:(String.length multipart_body)
+       request)
+
+let test_of_request_limited_rejects_negative_max_size () =
+  let request =
+    request ~content_type:"multipart/form-data; boundary=AaB03x" multipart_body
+  in
+  check_raises "negative max_size" (Invalid_argument "negative max_size")
+    (fun () ->
+      ignore
+        (Camelio.Multipart.of_request_limited ~max_size:(-1) request
+          : (Camelio.Multipart.t, Camelio.Multipart.error) result))
+
+let test_of_request_limited_rejects_negative_max_size_before_headers () =
+  check_raises "negative max_size" (Invalid_argument "negative max_size")
+    (fun () ->
+      ignore
+        (Camelio.Multipart.of_request_limited ~max_size:(-1)
+           (request multipart_body)
+          : (Camelio.Multipart.t, Camelio.Multipart.error) result))
+
 let test_of_request_rejects_missing_content_type () =
   check
     (result reject multipart_error)
@@ -156,6 +237,23 @@ let test_of_request_rejects_missing_boundary () =
     (Camelio.Multipart.of_request
        (request ~content_type:"multipart/form-data; boundary=\"\""
           multipart_body))
+
+let test_of_request_limited_rejects_content_type_errors () =
+  check
+    (result reject multipart_error)
+    "missing content-type" (Error Camelio.Multipart.Missing_content_type)
+    (Camelio.Multipart.of_request_limited ~max_size:100 (request multipart_body));
+  check
+    (result reject multipart_error)
+    "unsupported content-type"
+    (Error (Camelio.Multipart.Unsupported_content_type "application/json"))
+    (Camelio.Multipart.of_request_limited ~max_size:100
+       (request ~content_type:"application/json" multipart_body));
+  check
+    (result reject multipart_error)
+    "missing boundary" (Error Camelio.Multipart.Missing_boundary)
+    (Camelio.Multipart.of_request_limited ~max_size:100
+       (request ~content_type:"multipart/form-data" multipart_body))
 
 let test_decode_rejects_malformed_body () =
   List.iter
@@ -194,7 +292,13 @@ let test_pp_error () =
        Camelio.Multipart.Missing_boundary);
   check string "malformed" "malformed multipart body"
     (Format.asprintf "%a" Camelio.Multipart.pp_error
-       Camelio.Multipart.Malformed_body)
+       Camelio.Multipart.Malformed_body);
+  check string "body too large" "multipart body too large"
+    (Format.asprintf "%a" Camelio.Multipart.pp_error
+       Camelio.Multipart.Body_too_large);
+  check string "unexpected end" "unexpected end of multipart body"
+    (Format.asprintf "%a" Camelio.Multipart.pp_error
+       Camelio.Multipart.Unexpected_end_of_body)
 
 let () =
   run "multipart"
@@ -210,12 +314,27 @@ let () =
             test_quoted_parameter_semicolon;
           test_case "of_request extracts quoted boundary" `Quick
             test_of_request_extracts_quoted_boundary;
+          test_case "of_request_limited extracts quoted boundary" `Quick
+            test_of_request_limited_extracts_quoted_boundary;
+          test_case "of_request_limited rejects body too large" `Quick
+            test_of_request_limited_rejects_body_too_large;
+          test_case "of_request_limited rejects malformed body" `Quick
+            test_of_request_limited_rejects_malformed_body;
+          test_case "of_request_limited rejects unexpected end of body" `Quick
+            test_of_request_limited_rejects_unexpected_end_of_body;
+          test_case "of_request_limited rejects negative max_size" `Quick
+            test_of_request_limited_rejects_negative_max_size;
+          test_case
+            "of_request_limited rejects negative max_size before headers" `Quick
+            test_of_request_limited_rejects_negative_max_size_before_headers;
           test_case "of_request rejects missing content-type" `Quick
             test_of_request_rejects_missing_content_type;
           test_case "of_request rejects unsupported content-type" `Quick
             test_of_request_rejects_unsupported_content_type;
           test_case "of_request rejects missing boundary" `Quick
             test_of_request_rejects_missing_boundary;
+          test_case "of_request_limited rejects content-type errors" `Quick
+            test_of_request_limited_rejects_content_type_errors;
           test_case "decode rejects malformed body" `Quick
             test_decode_rejects_malformed_body;
           test_case "decode rejects empty boundary" `Quick

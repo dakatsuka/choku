@@ -38,6 +38,12 @@ parts.
 - `Multipart.decode ~boundary body` parses a raw multipart body.
 - `Multipart.of_request request` checks `Content-Type`, extracts `boundary`,
   and parses `Request.body`.
+- `Multipart.of_request_limited ~max_size request` checks `Content-Type`,
+  extracts `boundary`, reads at most `max_size` bytes from `Request.body`, and
+  parses the resulting buffered multipart body.
+- `Multipart.of_request_limited` supports server-created streaming request
+  bodies by using `Body.to_string_limited`; it is an interim bounded adapter,
+  not a true streaming multipart parser.
 - `Content-Type` matching is case-insensitive for the media type and supports
   parameters.
 - Missing `Content-Type` returns `Missing_content_type`.
@@ -62,6 +68,8 @@ module Multipart : sig
     | Unsupported_content_type of string
     | Missing_boundary
     | Malformed_body
+    | Body_too_large
+    | Unexpected_end_of_body
 
   module Part : sig
     type t
@@ -78,6 +86,7 @@ module Multipart : sig
 
   val decode : boundary:string -> string -> (t, error) result
   val of_request : Request.t -> (t, error) result
+  val of_request_limited : max_size:int -> Request.t -> (t, error) result
   val parts : t -> Part.t list
   val get : string -> t -> Part.t option
   val get_all : string -> t -> Part.t list
