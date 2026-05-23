@@ -23,8 +23,9 @@ buffered and streaming bodies. Buffered construction remains available for
 tests, small requests, and responses. Streaming request bodies will be consumed
 through Eio direct-style sources scoped to the handler invocation.
 
-The exact public function names and `Body.to_string` behavior will be settled in
-the streaming body execution plan before implementation.
+`Body.to_string` remains available for buffered compatibility. New code that may
+later consume streaming bodies should prefer a bounded read helper such as
+`Body.to_string_limited`.
 
 ## Alternatives Considered
 
@@ -42,8 +43,8 @@ the streaming body execution plan before implementation.
 - Existing buffered workflows can remain ergonomic.
 - Streaming request consumption can use Eio backpressure.
 - Multipart streaming can build on the same body-source model.
-- `Body.to_string` needs careful redesign so streaming bodies do not create
-  accidental unbounded memory use.
+- Code that needs to read a body into memory has an explicit bounded path,
+  reducing the pressure to make `Body.to_string` handle every future use case.
 - HTTP/1.1 connection reuse may remain limited when handlers do not consume
   streaming request bodies.
 

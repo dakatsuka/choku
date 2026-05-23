@@ -21,6 +21,7 @@ None.
 - [Add Multipart Part Consumers](completed/0006-add-multipart-part-consumers.md)
 - [Add Buffered Body Source Access](completed/0007-add-buffered-body-source.md)
 - [Add Body Consumers](completed/0008-add-body-consumers.md)
+- [Add Limited Body Read](completed/0009-add-limited-body-read.md)
 
 ## When To Create A Plan
 

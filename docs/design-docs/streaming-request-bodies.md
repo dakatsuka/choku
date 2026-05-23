@@ -44,6 +44,7 @@ module Body : sig
   val empty : t
   val string : string -> t
   val to_string : t -> string
+  val to_string_limited : max_size:int -> t -> (string, error) result
 
   val is_buffered : t -> bool
   val with_source : t -> (Eio.Flow.source_ty Eio.Resource.t -> 'a) -> 'a
@@ -55,15 +56,11 @@ source for both buffered and streaming bodies. For buffered bodies, the source i
 created from the stored string. For streaming bodies, the source is the live
 request stream scoped to the handler invocation.
 
-`Body.to_string` remains convenient but becomes a consuming operation for
-streaming bodies. It should either:
-
-- read the stream into memory subject to an explicit limit; or
-- be replaced by a new `to_string_exn ?max_size` before streaming bodies are
-  made public.
-
-The implementation plan should settle this before changing the public
-signature. The default must not accidentally allow unbounded memory growth.
+`Body.to_string` remains convenient for existing buffered workflows.
+`Body.to_string_limited` is the preferred API for code that may later receive
+streaming bodies because it makes in-memory reads explicitly bounded. The
+streaming implementation should preserve `to_string_limited` as the safe
+consuming read path.
 
 The server should invoke handlers before fully reading streaming bodies. The
 request body source remains valid only while the handler is running. If the
