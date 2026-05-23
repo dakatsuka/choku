@@ -132,10 +132,41 @@ let upload_buffered request =
             (Printf.sprintf "received %d bytes\n" (String.length bytes)))
 ```
 
-Use streaming request bodies for large multipart uploads. Streaming part sources
-are valid only during the `on_part` callback. When saving uploads, pass an
-application-owned temporary directory and `Eio.Stdenv.secure_random env` to the
-tempfile helper.
+Use streaming request bodies for large multipart uploads. Streaming can be
+enabled for a whole handler-backed server with `Server.create
+~request_body_mode:Server.Streaming`, or for individual router routes with
+`Router.post ~request_body_mode:Request_body_mode.Streaming` and
+`Server.create_router`. Streaming part sources are valid only during the
+`on_part` callback. When saving uploads, pass an application-owned temporary
+directory and `Eio.Stdenv.secure_random env` to the tempfile helper.
+
+Choose server-wide streaming when every route is expected to consume a streaming
+body:
+
+```ocaml
+let server =
+  let open Camelio in
+  Server.create ~request_body_mode:Server.Streaming
+    ~handler:(upload_streaming ~upload_dir ~random) ()
+```
+
+Choose route-level streaming when most routes should stay buffered and only
+upload routes need streaming bodies:
+
+```ocaml
+let router =
+  let open Camelio in
+  Router.empty
+  |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
+  |> Router.post
+       ~request_body_mode:Request_body_mode.Streaming
+       "/upload"
+       upload
+
+let server =
+  let open Camelio in
+  Server.create_router router
+```
 
 ```ocaml
 let upload_streaming ~upload_dir ~random request =
@@ -167,6 +198,8 @@ let server =
 When using the router, prefer `Server.create_router` and set
 `~request_body_mode:Camelio.Request_body_mode.Streaming` only on upload routes.
 Routes without `~request_body_mode` keep the default buffered body behavior.
+Route-level body-mode selection is not available when passing
+`Router.to_handler router` to `Server.create ~handler`.
 
 The repository includes runnable examples:
 
