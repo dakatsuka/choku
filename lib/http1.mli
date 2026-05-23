@@ -19,6 +19,15 @@ module Error : sig
   val equal : t -> t -> bool
 end
 
+type request_head = { meth : Method.t; target : string; headers : Headers.t }
+(** Parsed HTTP/1.1 request head without body bytes. *)
+
+val parse_request_head_string : string -> (request_head, error) result
+(** [parse_request_head_string raw] parses an HTTP/1.1 request head block.
+
+    [raw] must contain the request line and header lines, without the final
+    [CRLF CRLF] separator and without body bytes. *)
+
 val parse_request_string :
   ?max_request_body_size:int -> string -> (Request.t, error) result
 (** [parse_request_string ?max_request_body_size raw] parses one complete

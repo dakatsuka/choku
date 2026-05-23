@@ -23,6 +23,8 @@ module Error = struct
   let pp fmt t = Format.pp_print_string fmt (error_to_string t)
 end
 
+type request_head = { meth : Method.t; target : string; headers : Headers.t }
+
 let default_max_request_body_size = 1_048_576
 
 let find_header_end raw =
@@ -85,6 +87,20 @@ let parse_headers lines =
   in
   loop Headers.empty lines
 
+let parse_request_head_string raw =
+  match split_lines raw with
+  | [] -> Error Invalid_request_line
+  | request_line :: header_lines -> (
+      match parse_request_line (String.split_on_char ' ' request_line) with
+      | Error error -> Error error
+      | Ok (meth, target) -> (
+          match parse_headers header_lines with
+          | Error error -> Error error
+          | Ok headers -> (
+              match Headers.get "transfer-encoding" headers with
+              | Some _ -> Error Unsupported_transfer_encoding
+              | None -> Ok { meth; target; headers })))
+
 let is_digit = function '0' .. '9' -> true | _ -> false
 
 let parse_content_length_value value =
@@ -114,40 +130,25 @@ let parse_request_string
   | None -> Error Malformed_header
   | Some header_end -> (
       let header_block = String.sub raw 0 header_end in
-      match split_lines header_block with
-      | [] -> Error Invalid_request_line
-      | request_line :: header_lines -> (
-          match parse_request_line (String.split_on_char ' ' request_line) with
+      match parse_request_head_string header_block with
+      | Error error -> Error error
+      | Ok { meth; target; headers } -> (
+          let body_start = header_end + 4 in
+          let available_body = String.length raw - body_start |> max 0 in
+          match content_length headers with
           | Error error -> Error error
-          | Ok (meth, target) -> (
-              match parse_headers header_lines with
-              | Error error -> Error error
-              | Ok headers -> (
-                  match Headers.get "transfer-encoding" headers with
-                  | Some _ -> Error Unsupported_transfer_encoding
-                  | None -> (
-                      let body_start = header_end + 4 in
-                      let available_body =
-                        String.length raw - body_start |> max 0
-                      in
-                      let body_length = content_length headers in
-                      match body_length with
-                      | Error error -> Error error
-                      | Ok body_length -> (
-                          if body_length > max_request_body_size then
-                            Error Body_too_large
-                          else if available_body < body_length then
-                            Error Invalid_content_length
-                          else
-                            let body =
-                              String.sub raw body_start body_length
-                              |> Body.string
-                            in
-                            Request.make ~meth ~target ~headers ~body
-                            |> Result.ok
-                            |> function
-                            | Ok request -> Ok request
-                            | Error _ -> Error Unsupported_request_target))))))
+          | Ok body_length -> (
+              if body_length > max_request_body_size then Error Body_too_large
+              else if available_body < body_length then
+                Error Invalid_content_length
+              else
+                let body =
+                  String.sub raw body_start body_length |> Body.string
+                in
+                Request.make ~meth ~target ~headers ~body |> Result.ok
+                |> function
+                | Ok request -> Ok request
+                | Error _ -> Error Unsupported_request_target)))
 
 let serialize_response response =
   let body = Response.body response |> Body.to_string in

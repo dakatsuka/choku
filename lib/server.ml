@@ -31,39 +31,9 @@ let find_header_end buffer =
 
 let content_length_from_header_block raw header_end =
   let header_block = String.sub raw 0 header_end in
-  let lines = String.split_on_char '\n' header_block in
-  match lines with
-  | [] -> Error Http1.Invalid_request_line
-  | _request_line :: header_lines ->
-      let rec loop headers = function
-        | [] -> Http1.content_length headers
-        | "" :: rest -> loop headers rest
-        | line :: rest -> (
-            let line =
-              if
-                String.length line > 0
-                && Char.equal line.[String.length line - 1] '\r'
-              then String.sub line 0 (String.length line - 1)
-              else line
-            in
-            if String.length line = 0 then loop headers rest
-            else
-              match String.index_opt line ':' with
-              | None -> Error Http1.Malformed_header
-              | Some 0 -> Error Http1.Malformed_header
-              | Some index ->
-                  let name = String.sub line 0 index in
-                  let value =
-                    String.sub line (index + 1) (String.length line - index - 1)
-                    |> String.trim
-                  in
-                  if
-                    (not (Headers.is_valid_name name))
-                    || not (Headers.is_valid_value value)
-                  then Error Http1.Malformed_header
-                  else loop (Headers.add name value headers) rest)
-      in
-      loop Headers.empty header_lines
+  match Http1.parse_request_head_string header_block with
+  | Error error -> Error error
+  | Ok head -> Http1.content_length head.headers
 
 let read_request_bytes max_request_body_size flow =
   let buffer = Buffer.create 4096 in

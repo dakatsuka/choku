@@ -23,6 +23,29 @@ let test_parse_get () =
   check (option string) "host" (Some "example.test")
     (Camelio.Headers.get "host" (Camelio.Request.headers request))
 
+let test_parse_request_head () =
+  let raw =
+    "POST /submit HTTP/1.1\r\nHost: example.test\r\nContent-Length: 5"
+  in
+  match Camelio.Http1.parse_request_head_string raw with
+  | Ok head ->
+      check (module Camelio.Method) "method" Camelio.Method.POST head.meth;
+      check string "target" "/submit" head.target;
+      check (option string) "host" (Some "example.test")
+        (Camelio.Headers.get "host" head.headers);
+      check
+        (result int (module Camelio.Http1.Error))
+        "content length" (Ok 5)
+        (Camelio.Http1.content_length head.headers)
+  | Error error -> fail (Camelio.Http1.error_to_string error)
+
+let test_parse_request_head_rejects_transfer_encoding () =
+  let raw = "POST / HTTP/1.1\r\nTransfer-Encoding: chunked" in
+  check
+    (result reject (module Camelio.Http1.Error))
+    "transfer-encoding" (Error Camelio.Http1.Unsupported_transfer_encoding)
+    (Camelio.Http1.parse_request_head_string raw)
+
 let test_parse_content_length_body () =
   let request =
     parse_ok "POST /echo HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello"
@@ -106,6 +129,9 @@ let () =
       ( "http1",
         [
           test_case "parse GET" `Quick test_parse_get;
+          test_case "parse request head" `Quick test_parse_request_head;
+          test_case "parse request head rejects transfer-encoding" `Quick
+            test_parse_request_head_rejects_transfer_encoding;
           test_case "parse Content-Length body" `Quick
             test_parse_content_length_body;
           test_case "reject chunked" `Quick test_reject_chunked;

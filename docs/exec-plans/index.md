@@ -22,6 +22,7 @@ None.
 - [Add Buffered Body Source Access](completed/0007-add-buffered-body-source.md)
 - [Add Body Consumers](completed/0008-add-body-consumers.md)
 - [Add Limited Body Read](completed/0009-add-limited-body-read.md)
+- [Extract HTTP/1.1 Request Head Parser](completed/0010-extract-http1-request-head-parser.md)
 
 ## When To Create A Plan
 
