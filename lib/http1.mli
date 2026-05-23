@@ -7,6 +7,8 @@ type error =
   | Malformed_header
   | Invalid_content_length
   | Body_too_large
+  | Request_head_too_large
+  | Request_head_timeout
   | Unsupported_transfer_encoding
 
 val error_to_string : error -> string

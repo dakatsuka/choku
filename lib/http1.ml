@@ -5,6 +5,8 @@ type error =
   | Malformed_header
   | Invalid_content_length
   | Body_too_large
+  | Request_head_too_large
+  | Request_head_timeout
   | Unsupported_transfer_encoding
 
 let error_to_string = function
@@ -14,6 +16,8 @@ let error_to_string = function
   | Malformed_header -> "malformed header"
   | Invalid_content_length -> "invalid content-length"
   | Body_too_large -> "body too large"
+  | Request_head_too_large -> "request head too large"
+  | Request_head_timeout -> "request head timeout"
   | Unsupported_transfer_encoding -> "unsupported transfer-encoding"
 
 module Error = struct
@@ -175,6 +179,11 @@ let plain_error status body =
 
 let response_for_error = function
   | Body_too_large -> plain_error Status.payload_too_large "Payload Too Large\n"
+  | Request_head_too_large ->
+      plain_error Status.request_header_fields_too_large
+        "Request Header Fields Too Large\n"
+  | Request_head_timeout ->
+      plain_error Status.request_timeout "Request Timeout\n"
   | Invalid_request_line | Unsupported_http_version | Unsupported_request_target
   | Malformed_header | Invalid_content_length | Unsupported_transfer_encoding ->
       plain_error Status.bad_request "Bad Request\n"

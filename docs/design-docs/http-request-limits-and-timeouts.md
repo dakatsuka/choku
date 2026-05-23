@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -64,16 +64,13 @@ val create_router :
 
 `max_request_head_size` counts the bytes buffered while searching for the
 request-head terminator, including the terminating `\r\n\r\n` if present. The
-default should be `65_536` bytes. A negative value is invalid. A value of `0`
-means no request-head bytes can be read and is allowed only if the first read
-would immediately exceed the limit; practically, it rejects all non-empty
-requests. If this edge case is not useful, implementation may reject
-non-positive values instead.
+default should be `65_536` bytes. Non-positive values are invalid.
 
 `request_head_timeout` is the maximum time, in seconds, to receive a complete
 request head. `Some seconds` must be positive. `None` disables this timeout.
-The default should be `Some 30.0`. This is short enough to mitigate slowloris
-behavior for direct deployments but still generous for normal clients.
+The default is `None` for source-compatible adoption in this milestone. Direct
+deployments should opt in with a finite timeout, such as `Some 30.0`, to
+mitigate slowloris behavior.
 
 `Server.t` should store both settings. `Server.max_request_body_size` remains
 unchanged. A follow-up accessor for request-head settings is optional and not
@@ -134,30 +131,9 @@ timeout should wrap the full "read until headers complete" operation with
 Because `Eio.Time.Timeout.run` needs a clock, `Server.run` should pass an
 `Eio.Stdenv.mono_clock env`-derived clock capability into the request-reading
 path.
-The current `Server.run` receives only `net`, not `env`, so there are two viable
-implementation options:
-
-- add `?clock:_ Eio.Time.clock` or `?mono_clock:_ Eio.Time.Mono.t` to
-  `Server.run`;
-- store an optional timeout value in `Server.t` and apply it only when
-  `Server.run` is given a clock-capable runtime.
-
-The first option is more explicit but changes the `run` call site. The second
-option is awkward because timeout enforcement requires a clock. The preferred
-design is to add an optional monotonic clock argument to `Server.run`:
-
-```ocaml
-val run :
-  sw:Eio.Switch.t ->
-  net:'a Eio.Net.t ->
-  mono_clock:'b Eio.Time.Mono.t ->
-  addr:Eio.Net.Sockaddr.stream ->
-  t ->
-  unit
-```
-
-This is a public API break for callers of `Server.run`. To avoid that break, a
-compatibility alternative is:
+The current `Server.run` receives only `net`, not `env`, so timeout enforcement
+requires a new clock argument. To preserve source compatibility for callers that
+do not enable timeouts, add an optional monotonic clock argument:
 
 ```ocaml
 val run :
@@ -220,6 +196,4 @@ Implementation should run:
 
 ## Open Questions
 
-- Should `max_request_head_size` allow `0`, or reject non-positive values?
-- Is adding optional `?mono_clock` to `Server.run` acceptable, or should timeout
-  support wait for a larger server runtime API revision?
+None.

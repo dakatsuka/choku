@@ -11,6 +11,8 @@ type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
 val create :
   ?max_request_body_size:int ->
+  ?max_request_head_size:int ->
+  ?request_head_timeout:float option ->
   ?request_body_mode:request_body_mode ->
   ?middlewares:Middleware.t list ->
   handler:Handler.t ->
@@ -19,12 +21,18 @@ val create :
 (** [create ?max_request_body_size ?request_body_mode ?middlewares ~handler ()]
     creates a server.
 
-    [max_request_body_size] defaults to [1_048_576] bytes. [middlewares] are
-    applied with [Middleware.apply] exactly once. [request_body_mode] defaults
-    to [Buffered]. *)
+    [max_request_body_size] defaults to [1_048_576] bytes.
+    [max_request_head_size] defaults to [65_536] bytes. [request_head_timeout]
+    defaults to [None]. [middlewares] are applied with [Middleware.apply]
+    exactly once. [request_body_mode] defaults to [Buffered]. *)
 
 val create_router :
-  ?max_request_body_size:int -> ?middlewares:Middleware.t list -> Router.t -> t
+  ?max_request_body_size:int ->
+  ?max_request_head_size:int ->
+  ?request_head_timeout:float option ->
+  ?middlewares:Middleware.t list ->
+  Router.t ->
+  t
 (** [create_router ?max_request_body_size ?middlewares router] creates a server
     from [router].
 
@@ -47,6 +55,7 @@ val handle : t -> Request.t -> Response.t
 val run :
   sw:Eio.Switch.t ->
   net:'a Eio.Net.t ->
+  ?mono_clock:'b Eio.Time.Mono.t ->
   addr:Eio.Net.Sockaddr.stream ->
   t ->
   unit

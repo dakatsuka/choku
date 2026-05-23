@@ -161,6 +161,27 @@ let test_reject_over_limit_body () =
     | Ok _ -> fail "expected parse error"
     | Error error -> error)
 
+let test_response_for_request_head_errors () =
+  let cases =
+    [
+      ( Camelio.Http1.Request_head_too_large,
+        "HTTP/1.1 431 Request Header Fields Too Large",
+        "Request Header Fields Too Large\n" );
+      ( Camelio.Http1.Request_head_timeout,
+        "HTTP/1.1 408 Request Timeout",
+        "Request Timeout\n" );
+    ]
+  in
+  List.iter
+    (fun (error, status_line, body) ->
+      let wire =
+        Camelio.Http1.response_for_error error
+        |> Camelio.Http1.serialize_response
+      in
+      check bool "status" true (String.starts_with ~prefix:status_line wire);
+      check bool "body" true (String.ends_with ~suffix:body wire))
+    cases
+
 let test_serialize_response () =
   let response =
     Camelio.Response.text ~status:Camelio.Status.not_found "missing\n"
@@ -199,6 +220,8 @@ let () =
           test_case "body is capped to content-length" `Quick
             test_body_is_capped_to_content_length;
           test_case "reject over limit body" `Quick test_reject_over_limit_body;
+          test_case "response for request head errors" `Quick
+            test_response_for_request_head_errors;
           test_case "serialize response" `Quick test_serialize_response;
         ] );
     ]

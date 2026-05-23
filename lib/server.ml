@@ -4,24 +4,41 @@ type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
 type t = {
   max_request_body_size : int;
+  max_request_head_size : int;
+  request_head_timeout : float option;
   request_body_mode : Http1.request_head -> request_body_mode;
   handler : Handler.t;
 }
 
 let default_max_request_body_size = 1_048_576
+let default_max_request_head_size = 65_536
+
+let validate_request_head_config ~max_request_head_size ~request_head_timeout =
+  if max_request_head_size <= 0 then invalid_arg "max_request_head_size <= 0";
+  match request_head_timeout with
+  | Some timeout when timeout <= 0.0 ->
+      invalid_arg "non-positive request_head_timeout"
+  | Some _ | None -> ()
 
 let create ?(max_request_body_size = default_max_request_body_size)
-    ?(request_body_mode = Buffered) ?(middlewares = []) ~handler () =
+    ?(max_request_head_size = default_max_request_head_size)
+    ?(request_head_timeout = None) ?(request_body_mode = Buffered)
+    ?(middlewares = []) ~handler () =
   if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
+  validate_request_head_config ~max_request_head_size ~request_head_timeout;
   {
     max_request_body_size;
+    max_request_head_size;
+    request_head_timeout;
     request_body_mode = (fun _head -> request_body_mode);
     handler = Middleware.apply middlewares handler;
   }
 
 let create_router ?(max_request_body_size = default_max_request_body_size)
-    ?(middlewares = []) router =
+    ?(max_request_head_size = default_max_request_head_size)
+    ?(request_head_timeout = None) ?(middlewares = []) router =
   if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
+  validate_request_head_config ~max_request_head_size ~request_head_timeout;
   let router_handler = Router.to_handler router in
   let request_body_mode head =
     match
@@ -33,6 +50,8 @@ let create_router ?(max_request_body_size = default_max_request_body_size)
   in
   {
     max_request_body_size;
+    max_request_head_size;
+    request_head_timeout;
     request_body_mode;
     handler = Middleware.apply middlewares router_handler;
   }
@@ -114,7 +133,7 @@ let fixed_body_source flow buffered_body content_length =
       },
       Eio.Flow.Pi.source (module Fixed_body_source) )
 
-let read_request_head flow =
+let read_request_head ~max_request_head_size flow =
   let buffer = Buffer.create 4096 in
   let scratch = Cstruct.create 4096 in
   let rec read_until_headers () =
@@ -126,7 +145,9 @@ let read_request_head flow =
         | read ->
             Buffer.add_string buffer
               (Cstruct.to_string (Cstruct.sub scratch 0 read));
-            read_until_headers ())
+            if Buffer.length buffer > max_request_head_size then
+              Error Http1.Request_head_too_large
+            else read_until_headers ())
   in
   match read_until_headers () with
   | Error error -> Error error
@@ -177,7 +198,9 @@ let streaming_request_of_head ~max_request_body_size flow head buffered_body =
         request_of_head_body head body
 
 let read_request t flow =
-  match read_request_head flow with
+  match
+    read_request_head ~max_request_head_size:t.max_request_head_size flow
+  with
   | Error error -> Error error
   | Ok { buffered_body; head } -> (
       match t.request_body_mode head with
@@ -196,9 +219,21 @@ let read_request t flow =
 let write_response flow response =
   Eio.Flow.copy_string (Http1.serialize_response response) flow
 
-let handle_connection t flow =
+let handle_connection ?mono_clock t flow =
   let response =
-    match read_request t flow with
+    let request =
+      match (t.request_head_timeout, mono_clock) with
+      | None, _ -> read_request t flow
+      | Some _, None -> Error Http1.Request_head_timeout
+      | Some timeout, Some mono_clock -> (
+          let timeout = Eio.Time.Timeout.seconds mono_clock timeout in
+          match
+            Eio.Time.Timeout.run_exn timeout (fun () -> read_request t flow)
+          with
+          | request -> request
+          | exception Eio.Time.Timeout -> Error Http1.Request_head_timeout)
+    in
+    match request with
     | Error error -> Http1.response_for_error error
     | Ok request -> (
         try t.handler request with
@@ -208,8 +243,10 @@ let handle_connection t flow =
   write_response flow response;
   Eio.Flow.shutdown flow `All
 
-let run ~sw ~net ~addr t =
+let run ~sw ~net ?mono_clock ~addr t =
+  if Option.is_some t.request_head_timeout && Option.is_none mono_clock then
+    invalid_arg "request_head_timeout requires Server.run ~mono_clock";
   let socket = Eio.Net.listen ~reuse_addr:true ~backlog:128 ~sw net addr in
   Eio.Net.run_server socket
     ~on_error:(function Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
-    (fun flow _addr -> handle_connection t flow)
+    (fun flow _addr -> handle_connection ?mono_clock t flow)

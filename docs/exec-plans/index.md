@@ -9,7 +9,7 @@ Execution plans are first-class development artifacts for substantial work.
 
 ## Active Plans
 
-- [Design HTTP Request Limits And Timeouts](active/0022-design-http-request-limits-and-timeouts.md)
+None.
 
 ## Completed Plans
 
@@ -34,6 +34,7 @@ Execution plans are first-class development artifacts for substantial work.
 - [Design Route-Level Body Mode](completed/0019-design-route-level-body-mode.md)
 - [Implement Route-Level Body Mode](completed/0020-implement-route-level-body-mode.md)
 - [Add HTTP Security Regression Tests](completed/0021-add-http-security-regression-tests.md)
+- [Design HTTP Request Limits And Timeouts](completed/0022-design-http-request-limits-and-timeouts.md)
 
 ## When To Create A Plan
 
