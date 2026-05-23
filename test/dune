@@ -1,0 +1,13 @@
+(tests
+ (names
+  test_method
+  test_headers
+  test_status
+  test_body
+  test_request
+  test_response
+  test_handler
+  test_middleware
+  test_http1
+  test_server)
+ (libraries camelio alcotest eio eio_main))

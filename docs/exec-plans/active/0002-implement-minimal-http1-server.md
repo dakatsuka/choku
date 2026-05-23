@@ -53,14 +53,14 @@ implementation is added.
 - [x] Explore: inspect existing code, specs, design docs, and tests.
 - [x] Design review: request context-free third-party review and incorporate
       feedback.
-- [ ] Red: write failing behavior-focused tests, with unit test files organized
+- [x] Red: write failing behavior-focused tests, with unit test files organized
       per module. For OCaml, create one unit test file per source file under
       test.
-- [ ] Green: implement the smallest change that satisfies the tests.
-- [ ] Refactor: improve structure while keeping tests green.
-- [ ] Static checks: run formatters and static analysis tools, then fix findings.
-- [ ] Code review: request context-free third-party review after implementation.
-- [ ] Re-review: fix review findings and repeat review until it passes.
+- [x] Green: implement the smallest change that satisfies the tests.
+- [x] Refactor: improve structure while keeping tests green.
+- [x] Static checks: run formatters and static analysis tools, then fix findings.
+- [x] Code review: request context-free third-party review after implementation.
+- [x] Re-review: fix review findings and repeat review until it passes.
 
 ## Decisions
 
@@ -77,15 +77,19 @@ implementation is added.
 
 ## Verification
 
-Planned commands:
+Verified commands:
 
 ```sh
 dune build @all
 dune runtest
 dune fmt
+dune build @check
+dune build @install
+opam lint camelio.opam
+CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 ```
 
-Manual check after implementation:
+Manual check:
 
 ```sh
 curl -i http://127.0.0.1:8080/
@@ -93,11 +97,15 @@ curl -i http://127.0.0.1:8080/
 
 ## Completion Notes
 
-Pending implementation.
+Implemented the first minimal HTTP/1.1 server milestone with shared HTTP value
+types, handler and middleware contracts, HTTP/1.1 parser/serializer, Eio server
+loop, per-module Alcotest tests, gated loopback integration tests, and a small
+example server. Context-free code review initially found issues in
+`Content-Length` validation, header validation, response splitting protection,
+loopback coverage, and request target validation. Those findings were fixed and
+the re-review reported no blocking findings.
 
 ## Commit
-
-Use a Conventional Commits-compliant message, likely:
 
 ```text
 feat: implement minimal HTTP/1.1 server

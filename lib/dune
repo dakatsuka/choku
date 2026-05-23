@@ -1,3 +1,4 @@
 (library
  (name camelio)
- (public_name camelio))
+ (public_name camelio)
+ (libraries eio))

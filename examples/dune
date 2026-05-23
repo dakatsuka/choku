@@ -1,0 +1,4 @@
+(executable
+ (name hello)
+ (public_name camelio-hello)
+ (libraries camelio eio_main))
