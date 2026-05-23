@@ -5,6 +5,8 @@ This directory is the source of truth for Camelio's technical design.
 ## Current Documents
 
 - [Core Beliefs](core-beliefs.md)
+- [Future Work](future-work.md)
+- [HTTP Request Limits And Timeouts](http-request-limits-and-timeouts.md)
 - [Initial Architecture](initial-architecture.md)
 - [Minimal Router DSL](minimal-router-dsl.md)
 - [Minimal Server, Handler, and Middleware API](minimal-server-handler-middleware-api.md)

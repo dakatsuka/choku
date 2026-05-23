@@ -9,6 +9,8 @@ repository.
 - [Eio Documentation](eio-documentation.md)
 - [File Upload Filename Safety](file-upload-filename-safety.md)
 - [Harness Engineering Notes](harness-engineering-notes.md)
+- [HTTP Server Limits And Timeouts](http-server-limits-and-timeouts.md)
+- [Lightweight HTTP Upload Storage](lightweight-http-upload-storage.md)
 
 ## Reference Policy
 
