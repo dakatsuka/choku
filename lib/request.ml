@@ -11,16 +11,8 @@ let path_of_target target =
   | None -> target
   | Some index -> String.sub target 0 index
 
-let validate_origin_form target =
-  String.length target > 0
-  && Char.equal target.[0] '/'
-  && not
-       (String.exists
-          (function '\x00' .. '\x20' | '\x7f' -> true | _ -> false)
-          target)
-
 let make ~meth ~target ~headers ~body =
-  if not (validate_origin_form target) then
+  if not (Request_target.is_valid_origin_form target) then
     invalid_arg "invalid origin-form target";
   { meth; target; path = path_of_target target; headers; body }
 

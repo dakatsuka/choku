@@ -74,6 +74,9 @@ Start with the relevant index before making changes:
 - Use available static analysis and formatting tools for the language and fix
   their findings. Do not use prompts or manual AI edits as a substitute for
   tool-driven formatting or static checks.
+- Run Dune commands sequentially, not in parallel. Dune uses a shared workspace
+  lock, so concurrent `dune` invocations can fail with lock contention unrelated
+  to the code under test.
 - Before finishing implementation work, run the most specific available test
   command and record the result in the final response.
 - If no test harness exists yet, state that explicitly and prefer adding one as

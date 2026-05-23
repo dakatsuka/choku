@@ -63,21 +63,6 @@ let default_internal_error =
   Response.text ~status:Status.internal_server_error "Internal Server Error\n"
   |> Response.with_header "connection" "close"
 
-let find_header_end buffer =
-  let raw = Buffer.contents buffer in
-  let len = String.length raw in
-  let rec loop index =
-    if index + 3 >= len then None
-    else if
-      Char.equal raw.[index] '\r'
-      && Char.equal raw.[index + 1] '\n'
-      && Char.equal raw.[index + 2] '\r'
-      && Char.equal raw.[index + 3] '\n'
-    then Some index
-    else loop (index + 1)
-  in
-  loop 0
-
 type request_head_read = { buffered_body : string; head : Http1.request_head }
 
 type fixed_body_source = {
@@ -137,7 +122,7 @@ let read_request_head ~max_request_head_size flow =
   let buffer = Buffer.create 4096 in
   let scratch = Cstruct.create 4096 in
   let rec read_until_headers () =
-    match find_header_end buffer with
+    match Http1_wire.find_header_end (Buffer.contents buffer) with
     | Some header_end ->
         if header_end + 4 > max_request_head_size then
           Error Http1.Request_head_too_large
@@ -234,19 +219,22 @@ let read_request ?mono_clock t flow =
   | Error error -> Error error
   | Ok head -> read_request_body t flow head
 
-let write_response flow response =
-  Eio.Flow.copy_string (Http1.serialize_response response) flow
+let write_response ?(include_body = true) flow response =
+  Eio.Flow.copy_string (Http1.serialize_response ~include_body response) flow
 
 let handle_connection ?mono_clock t flow =
-  let response =
-    match read_request ?mono_clock t flow with
-    | Error error -> Http1.response_for_error error
-    | Ok request -> (
+  (match read_request ?mono_clock t flow with
+  | Error error -> write_response flow (Http1.response_for_error error)
+  | Ok request ->
+      let response =
         try t.handler request with
         | Eio.Cancel.Cancelled _ as exn -> raise exn
-        | _ -> default_internal_error)
-  in
-  write_response flow response;
+        | _ -> default_internal_error
+      in
+      let include_body =
+        not (Method.equal (Request.meth request) Method.HEAD)
+      in
+      write_response ~include_body flow response);
   Eio.Flow.shutdown flow `All
 
 let run ~sw ~net ?mono_clock ~addr t =

@@ -280,11 +280,11 @@ method tokens raise `Invalid_argument`.
 
 `Request.target` is the raw request-target from the request line. The first
 milestone supports origin-form targets. `Request.make` validates `target` and
-raises `Invalid_argument` if it is empty or is not an origin-form target starting
-with `"/"`. `Request.path` returns the origin-form path without the query
-string; for example, `"/items?a=1"` becomes `"/items"`. Unsupported
-request-target forms are rejected by the HTTP/1 parser before a `Request.t`
-reaches a handler.
+raises `Invalid_argument` if it is not a slash-prefixed path with an optional
+query string, or if it contains a fragment marker, control bytes, spaces, or
+DEL. `Request.path` returns the origin-form path without the query string; for
+example, `"/items?a=1"` becomes `"/items"`. Unsupported request-target forms are
+rejected by the HTTP/1 parser before a `Request.t` reaches a handler.
 
 This first milestone target contract is server-oriented. A future client design
 may add constructors for absolute-form request targets or URI-based outbound
@@ -375,6 +375,16 @@ them into HTTP 500 responses.
 
 Protocol parse errors, socket errors, write failures, and cancellation during IO
 belong to server or protocol modules, not middleware.
+
+For HTTP/1.1 server requests, the parser also requires exactly one non-empty
+`Host` header before constructing `Request.t`. Missing, empty, or duplicate
+`Host` headers are ordinary malformed request input and produce `400 Bad
+Request` before handler invocation.
+
+For explicit `HEAD` requests, the server serializes the same status and headers,
+including the `Content-Length` corresponding to the response body, but omits the
+body bytes on the wire. Automatic `HEAD` routing fallback for `GET` routes is a
+separate router feature and remains deferred.
 
 ## Contracts
 

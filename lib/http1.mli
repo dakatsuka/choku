@@ -35,9 +35,13 @@ val parse_request_string :
 (** [parse_request_string ?max_request_body_size raw] parses one complete
     HTTP/1.1 request from [raw]. *)
 
-val serialize_response : Response.t -> string
-(** [serialize_response response] serializes [response] with
-    [Connection: close]. *)
+val serialize_response : ?include_body:bool -> Response.t -> string
+(** [serialize_response ?include_body response] serializes [response] with
+    [Connection: close].
+
+    [include_body] defaults to [true]. When [false], the serialized
+    [Content-Length] still reflects [response]'s body, but no body bytes are
+    appended. *)
 
 val response_for_error : error -> Response.t
 (** [response_for_error error] returns the first-milestone error response. *)

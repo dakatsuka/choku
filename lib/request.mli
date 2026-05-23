@@ -7,7 +7,8 @@ val make :
 (** [make ~meth ~target ~headers ~body] creates a request.
 
     The first milestone supports origin-form targets only. [target] must be a
-    non-empty string starting with ['/'].
+    slash-prefixed path with an optional query string. It must not contain a
+    fragment marker, control bytes, spaces, or DEL.
 
     @raise Invalid_argument if [target] is not a valid origin-form target. *)
 

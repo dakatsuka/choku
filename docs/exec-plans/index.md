@@ -35,6 +35,7 @@ None.
 - [Implement Route-Level Body Mode](completed/0020-implement-route-level-body-mode.md)
 - [Add HTTP Security Regression Tests](completed/0021-add-http-security-regression-tests.md)
 - [Design HTTP Request Limits And Timeouts](completed/0022-design-http-request-limits-and-timeouts.md)
+- [Tighten HTTP/1.1 Request Semantics](completed/0023-tighten-http1-request-semantics.md)
 
 ## When To Create A Plan
 

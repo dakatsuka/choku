@@ -36,6 +36,10 @@ designed.
 
 - The server accepts request lines of the form
   `METHOD SP origin-form SP HTTP/1.1`.
+- The accepted origin-form target is a slash-prefixed path with an optional query
+  string. It must not contain a fragment marker, control bytes, spaces, or DEL.
+- HTTP/1.1 requests must contain exactly one non-empty `Host` header. Missing,
+  empty, or duplicate `Host` headers are rejected before handler invocation.
 - The server parses headers using the shared `Headers.t` contract.
 - The server supports request bodies only when `Content-Length` is present and
   valid.
@@ -57,6 +61,8 @@ designed.
 - The server rejects unsupported request-target forms before handler invocation.
 - The server rejects unsupported transfer encodings before handler invocation.
 - Responses are serialized with a status line, headers, and buffered body.
+  Explicit `HEAD` requests preserve the serialized `Content-Length` that a `GET`
+  response would have used, but do not write response body bytes.
 - The default response behavior is `Connection: close`.
 - Uncaught non-cancellation handler exceptions before response writing produce
   the default `500 Internal Server Error` response already defined by the
@@ -72,6 +78,7 @@ designed.
 | Unsupported HTTP version | No | `400 Bad Request` | Close |
 | Unsupported request-target form | No | `400 Bad Request` | Close |
 | Malformed header field | No | `400 Bad Request` | Close |
+| Missing, empty, or duplicate `Host` | No | `400 Bad Request` | Close |
 | Invalid `Content-Length` | No | `400 Bad Request` | Close |
 | Body larger than `max_request_body_size` | No | `413 Payload Too Large` | Close |
 | Unsupported `Transfer-Encoding` | No | `400 Bad Request` | Close |

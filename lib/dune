@@ -1,4 +1,5 @@
 (library
  (name camelio)
  (public_name camelio)
+ (private_modules http1_wire request_target)
  (libraries eio))

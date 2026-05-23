@@ -31,20 +31,6 @@ type request_head = { meth : Method.t; target : string; headers : Headers.t }
 
 let default_max_request_body_size = 1_048_576
 
-let find_header_end raw =
-  let len = String.length raw in
-  let rec loop index =
-    if index + 3 >= len then None
-    else if
-      Char.equal raw.[index] '\r'
-      && Char.equal raw.[index + 1] '\n'
-      && Char.equal raw.[index + 2] '\r'
-      && Char.equal raw.[index + 3] '\n'
-    then Some index
-    else loop (index + 1)
-  in
-  loop 0
-
 let split_lines headers =
   headers |> String.split_on_char '\n'
   |> List.map (fun line ->
@@ -57,7 +43,7 @@ let parse_request_line = function
       match Method.of_string meth with
       | exception Invalid_argument _ -> Error Invalid_request_line
       | meth ->
-          if String.length target = 0 || not (Char.equal target.[0] '/') then
+          if not (Request_target.is_valid_origin_form target) then
             Error Unsupported_request_target
           else Ok (meth, target))
   | [ _meth; _target; version ] when String.starts_with ~prefix:"HTTP/" version
@@ -91,6 +77,11 @@ let parse_headers lines =
   in
   loop Headers.empty lines
 
+let validate_host headers =
+  match Headers.get_all "host" headers with
+  | [ host ] when not (String.equal (String.trim host) "") -> Ok ()
+  | _ -> Error Malformed_header
+
 let parse_request_head_string raw =
   match split_lines raw with
   | [] -> Error Invalid_request_line
@@ -101,9 +92,12 @@ let parse_request_head_string raw =
           match parse_headers header_lines with
           | Error error -> Error error
           | Ok headers -> (
-              match Headers.get "transfer-encoding" headers with
-              | Some _ -> Error Unsupported_transfer_encoding
-              | None -> Ok { meth; target; headers })))
+              match validate_host headers with
+              | Error error -> Error error
+              | Ok () -> (
+                  match Headers.get "transfer-encoding" headers with
+                  | Some _ -> Error Unsupported_transfer_encoding
+                  | None -> Ok { meth; target; headers }))))
 
 let is_digit = function '0' .. '9' -> true | _ -> false
 
@@ -134,7 +128,7 @@ let make_request ~meth ~target ~headers ~body =
 
 let parse_request_string
     ?(max_request_body_size = default_max_request_body_size) raw =
-  match find_header_end raw with
+  match Http1_wire.find_header_end raw with
   | None -> Error Malformed_header
   | Some header_end -> (
       let header_block = String.sub raw 0 header_end in
@@ -155,7 +149,7 @@ let parse_request_string
                 in
                 make_request ~meth ~target ~headers ~body))
 
-let serialize_response response =
+let serialize_response ?(include_body = true) response =
   let body = Response.body response |> Body.to_string in
   let headers =
     Response.headers response
@@ -172,7 +166,7 @@ let serialize_response response =
     |> List.map (fun (name, value) -> name ^ ": " ^ value ^ "\r\n")
     |> String.concat ""
   in
-  status_line ^ header_lines ^ "\r\n" ^ body
+  status_line ^ header_lines ^ "\r\n" ^ if include_body then body else ""
 
 let plain_error status body =
   Response.text ~status body |> Response.with_header "connection" "close"

@@ -48,5 +48,5 @@ public routing semantics.
 
 ## Current Next Priority
 
-The next planned security-oriented work is request-line/header-size limits and
-slowloris mitigation for HTTP/1.1 request reading.
+No current next priority is recorded. Add one here when a deferred topic becomes
+the next planned design or implementation focus.

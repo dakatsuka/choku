@@ -113,6 +113,11 @@ dune build @install
 opam lint camelio.opam
 ```
 
+Run Dune commands sequentially in local and agent-driven harnesses. Dune uses a
+shared workspace lock, so concurrent invocations such as `dune build @all` and
+`dune runtest` can fail with lock contention that does not indicate a code
+failure.
+
 If additional static analysis becomes available later, add it to the execution
 plan and fix findings before implementation review.
 
@@ -132,6 +137,9 @@ opam exec -- dune build @check
 opam exec -- dune build @install
 opam lint camelio.opam
 ```
+
+CI may express the workflow as separate steps, but it should not run multiple
+Dune commands concurrently against the same checkout.
 
 Loopback integration tests are gated locally because sandboxed environments may
 forbid socket creation. They should run in CI.

@@ -90,7 +90,10 @@ and handler-scoped.
 
 Header lookup is case-insensitive. `Request.path` is derived from valid
 origin-form request targets by removing the query string. Unsupported
-request-target forms are rejected before handler invocation.
+request-target forms are rejected before handler invocation. The accepted
+server request-target subset is a slash-prefixed path with an optional query
+string and no fragment marker, control bytes, spaces, or DEL. HTTP/1.1 server
+requests must include exactly one non-empty `Host` header.
 Header insertion order is preserved. `Headers.add` appends, `Headers.set`
 removes case-insensitive matches and appends the replacement, `Headers.get`
 returns the first matching value, and `Response.with_header` uses `Headers.set`.

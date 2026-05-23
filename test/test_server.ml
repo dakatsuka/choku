@@ -77,9 +77,7 @@ let test_create_rejects_invalid_request_head_limits () =
            ()
           : Camelio.Server.t))
 
-let with_server ?(max_request_body_size = 4) ?max_request_head_size
-    ?request_head_timeout ?mono_clock
-    ?(request_body_mode = Camelio.Server.Buffered) handler f =
+let with_running_server ?mono_clock server f =
   Eio_main.run @@ fun env ->
   let net = Eio.Stdenv.net env in
   let clock = Eio.Stdenv.clock env in
@@ -94,10 +92,6 @@ let with_server ?(max_request_body_size = 4) ?max_request_head_size
         | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
   in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
-  let server =
-    Camelio.Server.create ?max_request_head_size ?request_head_timeout
-      ~max_request_body_size ~request_body_mode ~handler ()
-  in
   let response = ref None in
   (try
      Eio.Switch.run @@ fun sw ->
@@ -116,43 +110,22 @@ let with_server ?(max_request_body_size = 4) ?max_request_head_size
    with Exit -> ());
   match !response with Some response -> response | None -> fail "no response"
 
+let with_server ?(max_request_body_size = 4) ?max_request_head_size
+    ?request_head_timeout ?mono_clock
+    ?(request_body_mode = Camelio.Server.Buffered) handler f =
+  let server =
+    Camelio.Server.create ?max_request_head_size ?request_head_timeout
+      ~max_request_body_size ~request_body_mode ~handler ()
+  in
+  with_running_server ?mono_clock server f
+
 let with_router_server ?(max_request_body_size = 4) ?max_request_head_size
     ?request_head_timeout ?mono_clock router f =
-  Eio_main.run @@ fun env ->
-  let net = Eio.Stdenv.net env in
-  let clock = Eio.Stdenv.clock env in
-  let port =
-    let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    Fun.protect
-      ~finally:(fun () -> Unix.close socket)
-      (fun () ->
-        Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
-        match Unix.getsockname socket with
-        | Unix.ADDR_INET (_, port) -> port
-        | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
-  in
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let server =
     Camelio.Server.create_router ?max_request_head_size ?request_head_timeout
       ~max_request_body_size router
   in
-  let response = ref None in
-  (try
-     Eio.Switch.run @@ fun sw ->
-     Eio.Fiber.fork ~sw (fun () ->
-         Camelio.Server.run ~sw ~net ?mono_clock ~addr server);
-     let rec connect attempts =
-       Eio.Switch.run @@ fun client_sw ->
-       match Eio.Net.connect ~sw:client_sw net addr with
-       | flow -> f flow
-       | exception _ when attempts > 0 ->
-           Eio.Time.sleep clock 0.01;
-           connect (attempts - 1)
-     in
-     response := Some (connect 100);
-     Eio.Switch.fail sw Exit
-   with Exit -> ());
-  match !response with Some response -> response | None -> fail "no response"
+  with_running_server ?mono_clock server f
 
 let request raw flow =
   Eio.Flow.copy_string raw flow;
@@ -171,10 +144,25 @@ let test_run_success () =
   let response =
     with_server
       (fun _ -> Camelio.Response.text "ok\n")
-      (request "GET / HTTP/1.1\r\n\r\n")
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
   check bool "body" true (String.ends_with ~suffix:"ok\n" response)
+
+let test_run_head_suppresses_response_body () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> Camelio.Response.text "hello")
+      (request "HEAD / HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check string "wire"
+    "HTTP/1.1 200 OK\r\n\
+     content-type: text/plain; charset=utf-8\r\n\
+     content-length: 5\r\n\
+     connection: close\r\n\
+     \r\n"
+    response
 
 let test_run_post_request () =
   require_network ();
@@ -182,6 +170,7 @@ let test_run_post_request () =
     String.concat ""
       [
         "POST /upload?x=1 HTTP/1.1\r\n";
+        "Host: example.test\r\n";
         "Content-Type: text/plain\r\n";
         "Content-Length: 4\r\n";
         "\r\n";
@@ -219,6 +208,7 @@ let test_run_streaming_post_request () =
     String.concat ""
       [
         "POST /upload HTTP/1.1\r\n";
+        "Host: example.test\r\n";
         "Content-Type: application/octet-stream\r\n";
         "Content-Length: ";
         string_of_int (String.length body);
@@ -261,7 +251,12 @@ let test_run_streaming_unconsumed_body () =
   let response =
     with_server ~request_body_mode:Camelio.Server.Streaming
       (fun _req -> Camelio.Response.text "ok\n")
-      (request "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          ping")
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
 
@@ -277,7 +272,8 @@ let test_run_streaming_short_body_source_error () =
         | _ -> Camelio.Response.text "unexpected\n"
         | exception Camelio.Body.Unexpected_end_of_body_read ->
             Camelio.Response.text ~status:Camelio.Status.bad_request "short\n")
-      (request "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhi")
+      (request
+         "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 5\r\n\r\nhi")
   in
   check bool
     ("400 response: " ^ response)
@@ -289,7 +285,7 @@ let test_run_bad_request () =
   let response =
     with_server
       (fun _ -> fail "handler should not run")
-      (request "GET /bad path HTTP/1.1\r\n\r\n")
+      (request "GET /bad path HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
@@ -299,10 +295,58 @@ let test_run_bad_request_target_control () =
   let response =
     with_server
       (fun _ -> fail "handler should not run")
-      (request "GET /bad\tpath HTTP/1.1\r\n\r\n")
+      (request "GET /bad\tpath HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
+let test_run_missing_host_bad_request () =
+  require_network ();
+  let handler_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        handler_ran := true;
+        Camelio.Response.text "unexpected\n")
+      (request "GET / HTTP/1.1\r\n\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler not run" false !handler_ran
+
+let test_run_duplicate_host_bad_request () =
+  require_network ();
+  let handler_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        handler_ran := true;
+        Camelio.Response.text "unexpected\n")
+      (request
+         "GET / HTTP/1.1\r\nHost: example.test\r\nHost: other.test\r\n\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler not run" false !handler_ran
+
+let test_run_rejects_fragment_target_before_body_limit () =
+  require_network ();
+  let handler_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        handler_ran := true;
+        Camelio.Response.text "unexpected\n")
+      (request
+         "POST /bad#fragment HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 5\r\n\
+          \r\n\
+          hello")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler not run" false !handler_ran
 
 let test_run_incomplete_headers_bad_request () =
   require_network ();
@@ -319,7 +363,8 @@ let test_run_short_body_bad_request () =
   let response =
     with_server
       (fun _ -> fail "handler should not run")
-      (request "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\nhi")
+      (request
+         "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 4\r\n\r\nhi")
   in
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
@@ -329,7 +374,12 @@ let test_run_payload_too_large () =
   let response =
     with_server
       (fun _ -> fail "handler should not run")
-      (request "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 5\r\n\
+          \r\n\
+          hello")
   in
   check bool "413" true
     (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
@@ -339,7 +389,12 @@ let test_run_streaming_payload_too_large () =
   let response =
     with_server ~request_body_mode:Camelio.Server.Streaming
       (fun _ -> fail "handler should not run")
-      (request "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 5\r\n\
+          \r\n\
+          hello")
   in
   check bool "413" true
     (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
@@ -350,6 +405,7 @@ let test_run_streaming_unsupported_transfer_encoding () =
     String.concat ""
       [
         "POST / HTTP/1.1\r\n";
+        "Host: example.test\r\n";
         "Transfer-Encoding: chunked\r\n";
         "\r\n";
         "4\r\n";
@@ -373,6 +429,7 @@ let test_run_rejects_transfer_encoding_content_length_smuggling () =
     String.concat ""
       [
         "POST / HTTP/1.1\r\n";
+        "Host: example.test\r\n";
         "Transfer-Encoding: chunked\r\n";
         "Content-Length: 4\r\n";
         "\r\n";
@@ -416,7 +473,10 @@ let test_run_rejects_large_request_head () =
         handler_ran := true;
         Camelio.Response.text "unexpected\n")
       (request
-         "GET / HTTP/1.1\r\nX-Long: 012345678901234567890123456789\r\n\r\n")
+         "GET / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          X-Long: 012345678901234567890123456789\r\n\
+          \r\n")
   in
   check bool "431" true
     (String.starts_with ~prefix:"HTTP/1.1 431 Request Header Fields Too Large"
@@ -425,7 +485,7 @@ let test_run_rejects_large_request_head () =
 
 let test_run_large_request_head_at_limit () =
   require_network ();
-  let raw = "GET / HTTP/1.1\r\nX-Test: ok\r\n\r\n" in
+  let raw = "GET / HTTP/1.1\r\nHost: example.test\r\nX-Test: ok\r\n\r\n" in
   let response =
     with_server ~max_request_head_size:(String.length raw)
       (fun _ -> Camelio.Response.text "ok\n")
@@ -435,7 +495,9 @@ let test_run_large_request_head_at_limit () =
 
 let test_run_request_head_limit_ignores_buffered_body_prefix () =
   require_network ();
-  let head = "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n" in
+  let head =
+    "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 4\r\n\r\n"
+  in
   let response =
     with_server ~max_request_head_size:(String.length head)
       (fun req ->
@@ -537,7 +599,11 @@ let test_run_request_head_timeout_does_not_cover_body () =
        Eio.Switch.run @@ fun client_sw ->
        match Eio.Net.connect ~sw:client_sw net addr with
        | flow ->
-           Eio.Flow.copy_string "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n"
+           Eio.Flow.copy_string
+             "POST / HTTP/1.1\r\n\
+              Host: example.test\r\n\
+              Content-Length: 4\r\n\
+              \r\n"
              flow;
            Eio.Time.sleep clock 0.05;
            Eio.Flow.copy_string "ping" flow;
@@ -587,7 +653,12 @@ let test_run_streaming_body_is_capped_to_content_length () =
           "body" (Ok "ping")
           (Camelio.Body.to_string_limited ~max_size:4 (Camelio.Request.body req));
         Camelio.Response.text "ok\n")
-      (request "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\npingGET /evil")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          pingGET /evil")
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
 
@@ -603,7 +674,12 @@ let test_run_router_buffered_route () =
   in
   let response =
     with_router_server router
-      (request "POST /buffered HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+      (request
+         "POST /buffered HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          ping")
   in
   check bool
     ("200 response: " ^ response)
@@ -631,6 +707,7 @@ let test_run_router_streaming_route () =
     String.concat ""
       [
         "POST /streaming HTTP/1.1\r\n";
+        "Host: example.test\r\n";
         "Content-Length: ";
         string_of_int (String.length body);
         "\r\n";
@@ -658,7 +735,12 @@ let test_run_router_unmatched_body_too_large () =
   in
   let response =
     with_router_server router
-      (request "POST /missing HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+      (request
+         "POST /missing HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 5\r\n\
+          \r\n\
+          hello")
   in
   check bool "413" true
     (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response);
@@ -683,7 +765,12 @@ let test_run_router_does_not_preinvoke_route_handler () =
   in
   let response =
     with_router_server router
-      (request "POST /upload HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+      (request
+         "POST /upload HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          ping")
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
   check int "handler invoked once" 1 !handler_started
@@ -692,6 +779,7 @@ let multipart_request ~boundary body =
   String.concat ""
     [
       "POST /upload HTTP/1.1\r\n";
+      "Host: example.test\r\n";
       "Content-Type: multipart/form-data; boundary=";
       boundary;
       "\r\n";
@@ -848,7 +936,7 @@ let test_run_router_streaming_multipart_upload () =
   in
   let health =
     with_router_server ~max_request_body_size:(String.length body) router
-      (request "GET /health HTTP/1.1\r\n\r\n")
+      (request "GET /health HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "health 200" true
     (String.starts_with ~prefix:"HTTP/1.1 200 OK" health);
@@ -865,7 +953,9 @@ let test_run_router_streaming_multipart_upload () =
 let test_run_handler_exception () =
   require_network ();
   let response =
-    with_server (fun _ -> failwith "boom") (request "GET / HTTP/1.1\r\n\r\n")
+    with_server
+      (fun _ -> failwith "boom")
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "500" true
     (String.starts_with ~prefix:"HTTP/1.1 500 Internal Server Error" response)
@@ -886,6 +976,8 @@ let () =
           test_case "create rejects invalid request head limits" `Quick
             test_create_rejects_invalid_request_head_limits;
           test_case "run success" `Quick test_run_success;
+          test_case "run HEAD suppresses response body" `Quick
+            test_run_head_suppresses_response_body;
           test_case "run post request" `Quick test_run_post_request;
           test_case "run streaming post request" `Quick
             test_run_streaming_post_request;
@@ -896,6 +988,12 @@ let () =
           test_case "run bad request" `Quick test_run_bad_request;
           test_case "run bad request target control" `Quick
             test_run_bad_request_target_control;
+          test_case "run missing Host bad request" `Quick
+            test_run_missing_host_bad_request;
+          test_case "run duplicate Host bad request" `Quick
+            test_run_duplicate_host_bad_request;
+          test_case "run rejects fragment target before body limit" `Quick
+            test_run_rejects_fragment_target_before_body_limit;
           test_case "run incomplete headers bad request" `Quick
             test_run_incomplete_headers_bad_request;
           test_case "run short body bad request" `Quick
