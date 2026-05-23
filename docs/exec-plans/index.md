@@ -23,6 +23,7 @@ None.
 - [Add Body Consumers](completed/0008-add-body-consumers.md)
 - [Add Limited Body Read](completed/0009-add-limited-body-read.md)
 - [Extract HTTP/1.1 Request Head Parser](completed/0010-extract-http1-request-head-parser.md)
+- [Split Server Request Reading](completed/0011-split-server-request-reading.md)
 
 ## When To Create A Plan
 

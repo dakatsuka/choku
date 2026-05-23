@@ -29,13 +29,13 @@ let find_header_end buffer =
   in
   loop 0
 
-let content_length_from_header_block raw header_end =
-  let header_block = String.sub raw 0 header_end in
-  match Http1.parse_request_head_string header_block with
-  | Error error -> Error error
-  | Ok head -> Http1.content_length head.headers
+type request_head_read = {
+  raw_head : string;
+  buffered_body : string;
+  head : Http1.request_head;
+}
 
-let read_request_bytes max_request_body_size flow =
+let read_request_head flow =
   let buffer = Buffer.create 4096 in
   let scratch = Cstruct.create 4096 in
   let rec read_until_headers () =
@@ -51,21 +51,37 @@ let read_request_bytes max_request_body_size flow =
   | Error error -> Error error
   | Ok header_end -> (
       let raw = Buffer.contents buffer in
-      match content_length_from_header_block raw header_end with
+      let raw_head = String.sub raw 0 header_end in
+      match Http1.parse_request_head_string raw_head with
       | Error error -> Error error
-      | Ok content_length ->
-          if content_length > max_request_body_size then
-            Error Http1.Body_too_large
-          else
-            let body_start = header_end + 4 in
-            let already_read = String.length raw - body_start in
-            let remaining = content_length - already_read in
-            if remaining <= 0 then Ok raw
-            else
-              let exact = Cstruct.create remaining in
-              Eio.Flow.read_exact flow exact;
-              Buffer.add_string buffer (Cstruct.to_string exact);
-              Ok (Buffer.contents buffer))
+      | Ok head ->
+          let body_start = header_end + 4 in
+          let buffered_body =
+            String.sub raw body_start (String.length raw - body_start)
+          in
+          Ok { raw_head; buffered_body; head })
+
+let read_fixed_body ~max_request_body_size flow head buffered_body =
+  match Http1.content_length head.Http1.headers with
+  | Error error -> Error error
+  | Ok content_length ->
+      if content_length > max_request_body_size then Error Http1.Body_too_large
+      else
+        let already_read = String.length buffered_body in
+        let remaining = content_length - already_read in
+        if remaining <= 0 then Ok (String.sub buffered_body 0 content_length)
+        else
+          let exact = Cstruct.create remaining in
+          Eio.Flow.read_exact flow exact;
+          Ok (buffered_body ^ Cstruct.to_string exact)
+
+let read_request_bytes max_request_body_size flow =
+  match read_request_head flow with
+  | Error error -> Error error
+  | Ok { raw_head; buffered_body; head } -> (
+      match read_fixed_body ~max_request_body_size flow head buffered_body with
+      | Error error -> Error error
+      | Ok body -> Ok (raw_head ^ "\r\n\r\n" ^ body))
 
 let write_response flow response =
   Eio.Flow.copy_string (Http1.serialize_response response) flow
