@@ -89,8 +89,7 @@ The first implementation plan should introduce:
 - `test/dune`;
 - `examples/dune`;
 - `.ocamlformat`;
-- an opam package file when package metadata is needed for dependency
-  resolution.
+- `camelio.opam`, generated from `dune-project`.
 
 Initial dependencies:
 
@@ -98,6 +97,9 @@ Initial dependencies:
 - test: `alcotest`;
 - build: `dune`;
 - formatting: `ocamlformat`.
+
+Use the conventional ocamlformat profile. The initial checked-in formatter
+version should match the version available in the development switch.
 
 The expected verification commands are:
 
@@ -154,6 +156,5 @@ tool-driven formatting.
 
 ## Open Questions
 
-- Should an opam package file be created in the first implementation step, or
-  after the first buildable library exists?
-- Which exact ocamlformat profile should be used?
+- Should benchmark, fuzzing, coverage, or CI infrastructure be added after the
+  minimal server exists?
