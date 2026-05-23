@@ -6,6 +6,7 @@ This directory is the source of truth for Camelio's technical design.
 
 - [Core Beliefs](core-beliefs.md)
 - [Initial Architecture](initial-architecture.md)
+- [Minimal Server, Handler, and Middleware API](minimal-server-handler-middleware-api.md)
 - [ADR Index](adr/index.md)
 
 ## When To Add Or Update A Design Doc

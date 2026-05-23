@@ -4,6 +4,7 @@ Product specs define externally visible behavior and user expectations.
 
 ## Current Specs
 
+- [Minimal Server API](minimal-server-api.md)
 - [Project Charter](project-charter.md)
 
 ## When To Add Or Update A Product Spec

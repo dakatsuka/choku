@@ -33,6 +33,8 @@ runtimes such as `lwt` or `async`.
 
 - `Camelio`: public entry point.
 - `Camelio.Server`: accept loop, connection lifecycle, handler invocation.
+- `Camelio.Handler`: low-level request-to-response handler contract.
+- `Camelio.Middleware`: handler-to-handler transformations.
 - `Camelio.Http`: request, response, method, header, status, and body types.
 - `Camelio.Http1`: HTTP/1 parser and encoder.
 - `Camelio.Body`: streaming request and response body abstractions.
@@ -44,9 +46,10 @@ layout and build tooling.
 
 ## Concurrency Model
 
-Each accepted connection should run in an Eio fiber under a switch owned by the
-server. Connection-local resources must be tied to the connection scope. Request
-handling should honor Eio cancellation and must not require a secondary runtime.
+Each accepted connection should run in an Eio fiber attached to the caller-owned
+switch passed to the server. Connection-local resources must be tied to the
+connection scope. Request handling should honor Eio cancellation and must not
+require a secondary runtime.
 
 ## Validation
 
@@ -60,5 +63,7 @@ The initial implementation plan should introduce:
 ## Open Questions
 
 - Which test framework should be used?
-- Should the first parser be handwritten or built with a parser combinator?
 - What is the minimum supported HTTP/1.1 feature set for the first release?
+- Should the first parser be handwritten or built with a parser combinator?
+- Should request and response body abstractions be eager, streaming, or hybrid in
+  the first implementation milestone?

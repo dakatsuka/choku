@@ -1,0 +1,400 @@
+# Minimal Server, Handler, and Middleware API
+
+## Status
+
+Draft
+
+## Context
+
+Camelio should first establish a small Eio-native HTTP server API before adding
+a higher-level routing DSL. Languages and frameworks such as Go, Sinatra, Hono,
+and Akka HTTP show that production HTTP stacks often benefit from both low-level
+handler contracts and higher-level routing layers. Camelio should keep that
+separation from the beginning without requiring the routing layer in the first
+milestone.
+
+Eio uses direct style with structured concurrency. Camelio should not expose
+`Lwt.t`, `Async.Deferred.t`, callback pyramids, or framework-specific routing
+concepts in the core handler contract.
+
+## Goals
+
+- Define a minimal server API that can run a plain OCaml function as an HTTP
+  handler.
+- Keep the first handler contract small enough to test without a live socket.
+- Add middleware from the start as a first-class transformation over handlers.
+- Leave room for a future Router DSL that compiles down to the same handler
+  contract.
+- Keep Eio capabilities explicit at server boundaries and ordinary direct-style
+  OCaml inside handlers.
+
+## Non-Goals
+
+- Providing a routing DSL in the first server milestone.
+- Providing a web framework, controller layer, template layer, or application
+  container.
+- Copying Go's mutable `ResponseWriter` model as the primary API.
+- Designing HTTP/2, HTTP/3, TLS, compression, or observability integrations.
+
+## Proposed Design
+
+The first public server API should revolve around three concepts:
+
+- `Request.t`: an immutable request value plus an explicit body abstraction.
+- `Response.t`: a response value that describes status, headers, and body.
+- `Handler.t`: a function from request to response.
+
+Middleware should be a function from handler to handler:
+
+```ocaml
+module Handler : sig
+  type t = Request.t -> Response.t
+end
+
+module Middleware : sig
+  type t = Handler.t -> Handler.t
+
+  val identity : t
+  val compose : t -> t -> t
+  val apply : t list -> Handler.t -> Handler.t
+end
+```
+
+The server should accept an already-composed handler:
+
+```ocaml
+module Server : sig
+  type t
+
+  val create :
+    ?middlewares:Middleware.t list ->
+    handler:Handler.t ->
+    unit ->
+    t
+
+  val run :
+    sw:Eio.Switch.t ->
+    net:[> Eio.Net.ty ] Eio.Resource.t ->
+    addr:Eio.Net.Sockaddr.stream ->
+    t ->
+    unit
+end
+```
+
+The caller owns the Eio switch passed to `Server.run`. Camelio attaches the
+listening socket and per-connection fibers to that switch, but does not close the
+switch itself. `Server.run` blocks until the switch is cancelled, the listening
+socket fails, or a future explicit shutdown API requests termination. The first
+implementation milestone does not need an explicit shutdown function; structured
+cancellation through the caller-owned switch is the shutdown mechanism.
+
+`Server.create ?middlewares ~handler ()` must compose `middlewares` exactly once
+using `Middleware.apply middlewares handler` and store the resulting handler.
+
+Application dependencies should normally be captured by closure:
+
+```ocaml
+let make_handler clock =
+  fun request ->
+    let now = Eio.Time.now clock in
+    Response.text (Printf.sprintf "now=%f" now)
+```
+
+This keeps the core handler simple while still allowing Eio resources to be used
+where the application owns them.
+
+## Router Compatibility
+
+The first milestone should not include `Router`, but the handler contract should
+make a future router straightforward:
+
+```ocaml
+module Router : sig
+  type t
+
+  val get : string -> Handler.t -> t -> t
+  val post : string -> Handler.t -> t -> t
+  val to_handler : t -> Handler.t
+end
+```
+
+Because `Router.to_handler` returns `Handler.t`, routing remains an optional
+layer rather than a server dependency.
+
+## Middleware Semantics
+
+Middleware order should be explicit and documented. `Middleware.apply [a; b] h`
+should produce `a (b h)`, so the first middleware in the list observes the
+request first and the response last. This matches common wrapping intuition and
+keeps logging, error handling, and instrumentation middleware predictable.
+
+`Middleware.identity h` is `h`. `Middleware.compose a b h` is `a (b h)`.
+`Middleware.apply middlewares h` folds with `compose` in list order, so
+`Middleware.apply [a; b; c] h` is `a (b (c h))`.
+
+Examples of middleware that should be possible without special server hooks:
+
+- exception-to-response mapping;
+- request logging;
+- response header injection;
+- basic request metrics;
+- method or path guards.
+
+Connection-level concerns such as socket accept loops, per-connection switches,
+read timeouts, and protocol errors should remain in `Server` or HTTP protocol
+modules rather than middleware.
+
+## Minimal HTTP Type Contract
+
+`Request.t`, `Response.t`, and body types should be abstract in public
+interfaces. The first implementation should expose constructors and accessors
+rather than public record fields or public variant representation. This keeps
+room for future streaming support without forcing users to pattern match on
+internal representation.
+
+First milestone request contract:
+
+```ocaml
+module Method : sig
+  type t =
+    | GET
+    | HEAD
+    | POST
+    | PUT
+    | PATCH
+    | DELETE
+    | OPTIONS
+    | Other of string
+
+  val to_string : t -> string
+  val of_string : string -> t
+end
+
+module Headers : sig
+  type t
+
+  val empty : t
+  val add : string -> string -> t -> t
+  val set : string -> string -> t -> t
+  val get : string -> t -> string option
+  val get_all : string -> t -> string list
+  val to_list : t -> (string * string) list
+end
+
+module Request : sig
+  type t
+
+  val make :
+    meth:Method.t ->
+    target:string ->
+    headers:Headers.t ->
+    body:Body.t ->
+    t
+
+  val meth : t -> Method.t
+  val target : t -> string
+  val path : t -> string
+  val headers : t -> Headers.t
+  val body : t -> Body.t
+end
+```
+
+`Headers.get` and `Headers.get_all` use case-insensitive field-name lookup while
+preserving insertion order for `to_list`. `Headers.add name value headers`
+appends a new field after existing fields. `Headers.set name value headers`
+removes all existing fields whose names match case-insensitively, then appends
+the new field at the end. `Headers.get name headers` returns the first matching
+value in insertion order after applying those rules. `Headers.get_all name
+headers` returns all matching values in insertion order. `Response.with_header`
+uses `Headers.set`.
+
+HTTP methods are case-sensitive. `Method.of_string` maps exact uppercase known
+methods such as `"GET"` and `"POST"` to their constructors. Any other valid HTTP
+method token becomes `Other token` and preserves the original case. Invalid
+method tokens raise `Invalid_argument`.
+
+`Request.target` is the raw request-target from the request line. The first
+milestone supports origin-form targets. `Request.make` validates `target` and
+raises `Invalid_argument` if it is empty or is not an origin-form target starting
+with `"/"`. `Request.path` returns the origin-form path without the query
+string; for example, `"/items?a=1"` becomes `"/items"`. Unsupported
+request-target forms are rejected by the HTTP/1 parser before a `Request.t`
+reaches a handler.
+
+First milestone response contract:
+
+```ocaml
+module Status : sig
+  type t
+
+  val code : t -> int
+  val reason : t -> string
+  val of_code : int -> t
+
+  val ok : t
+  val bad_request : t
+  val not_found : t
+  val internal_server_error : t
+end
+
+module Response : sig
+  type t
+
+  val make :
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    Status.t ->
+    t
+
+  val text : ?status:Status.t -> string -> t
+  val status : t -> Status.t
+  val headers : t -> Headers.t
+  val body : t -> Body.t
+  val with_header : string -> string -> t -> t
+end
+```
+
+`Status.of_code` accepts integers from 100 through 599 and raises
+`Invalid_argument` outside that range. Known status codes use their standard
+reason phrase. Unknown but valid codes use an empty reason phrase.
+
+First milestone body contract:
+
+```ocaml
+module Body : sig
+  type t
+
+  val empty : t
+  val string : string -> t
+  val to_string : t -> string
+end
+```
+
+Request bodies are buffered and replayable in the first milestone. The server
+should enforce a configurable maximum request body size before constructing
+`Request.t`; the exact default belongs in the implementation plan. Streaming
+request and response bodies are deferred, but the abstract body type preserves a
+path for adding streaming constructors later.
+
+Test builders should use the same `make` functions so handler and middleware
+tests can run without sockets.
+
+## Error Semantics
+
+Middleware may catch exceptions from the wrapped handler and convert them into
+responses. If a non-cancellation exception escapes all middleware before a
+response is written, the server should return this exact default response:
+
+- status: `500 Internal Server Error`;
+- headers: `content-type: text/plain; charset=utf-8` and `connection: close`;
+- body: `Internal Server Error\n`.
+
+After sending that response, the server should close the request connection.
+If response writing has already started or socket writing fails, the server
+should close the connection without attempting to synthesize another HTTP
+response.
+
+Exceptions matching `Eio.Cancel.Cancelled _` are cancellation signals. The server
+must re-raise or otherwise preserve cancellation semantics rather than converting
+them into HTTP 500 responses.
+
+Protocol parse errors, socket errors, write failures, and cancellation during IO
+belong to server or protocol modules, not middleware.
+
+## Contracts
+
+Public source interfaces should include block comments equivalent to these
+contracts:
+
+```ocaml
+module Handler : sig
+  (** A request handler runs inside the Eio fiber serving one HTTP request.
+
+      The handler receives a request value and returns a response description.
+      It may perform Eio operations directly using capabilities captured by
+      closure. It must not depend on Lwt, Async, or another scheduler. *)
+  type t = Request.t -> Response.t
+end
+
+module Middleware : sig
+  (** Middleware transforms one handler into another handler.
+
+      Middleware may inspect or replace the request before calling the wrapped
+      handler, and may inspect or replace the response returned by it. It may
+      also catch exceptions from the wrapped handler when implementing error
+      handling policies. *)
+  type t = Handler.t -> Handler.t
+
+  (** [compose a b h] is [a (b h)]. *)
+  val compose : t -> t -> t
+
+  (** [apply [a; b; c] h] is [a (b (c h))]. *)
+  val apply : t list -> Handler.t -> Handler.t
+end
+
+module Server : sig
+  (** [run ~sw ~net ~addr server] accepts HTTP connections on [addr] using Eio.
+
+      The caller owns [sw]. Camelio attaches listener resources and connection
+      fibers to that switch, but does not close it. The call runs until [sw] is
+      cancelled, the listening socket fails, or a future shutdown API requests
+      termination. *)
+  val run :
+    sw:Eio.Switch.t ->
+    net:[> Eio.Net.ty ] Eio.Resource.t ->
+    addr:Eio.Net.Sockaddr.stream ->
+    t ->
+    unit
+end
+```
+
+`Request.t`, `Response.t`, and `Body.t` contracts should be documented in their
+own `.mli` files with the same ownership and buffering semantics described
+above.
+
+## Alternatives Considered
+
+- `ctx -> Request.t -> Response.t`: useful for server-owned request metadata,
+  but premature before the first server contract exists. Request metadata can be
+  carried on `Request.t`, and application dependencies can be captured by
+  closure.
+- `ResponseWriter.t -> Request.t -> unit`: close to Go, but more mutation-heavy
+  and harder to test as a pure value-level contract. It may still be useful later
+  as a streaming body implementation detail.
+- Router-first API: convenient for applications, but it would entangle path
+  matching with the server lifecycle before the low-level handler contract is
+  stable.
+- Middleware as server hooks: less composable and harder to test than
+  `Handler.t -> Handler.t`.
+
+## Third-Party Review
+
+Initial context-free sub-agent review found blocking ambiguity around switch
+ownership, HTTP body contracts, middleware ordering consistency, and default
+handler exception behavior. A second review found remaining ambiguity in
+`Middleware.compose`, `Server.create`, minimal HTTP support types, path
+derivation, and default 500 behavior. A third review requested tighter contracts
+for headers, `Response.with_header`, `Method.of_string`, `Status.of_code`, and
+`Request.make`. This document was updated to make those contracts explicit.
+Final context-free re-review reported no blocking findings and confirmed that
+the design and product spec are consistent enough to proceed toward an
+implementation plan.
+
+## Validation
+
+The implementation plan should validate this design with:
+
+- unit tests for middleware composition order;
+- unit tests for request, response, and body constructors/accessors;
+- unit tests for handler invocation without a socket;
+- integration tests for `Server.run` with a minimal handler;
+- interface comments checked into `.mli` files;
+- formatter and static analysis commands once the OCaml toolchain exists.
+
+## Open Questions
+
+- Should `Request.t` expose the body as a pull-based stream, an eager value, or a
+  hybrid body abstraction after the first buffered-body milestone?
+- Should `Response.t` add streaming after the first implementation milestone?
+- Should shutdown be cancellation-only at first, or should `Server.t` expose an
+  explicit shutdown function?
