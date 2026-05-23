@@ -78,12 +78,58 @@ let test_run_success () =
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
   check bool "body" true (String.ends_with ~suffix:"ok\n" response)
 
+let test_run_post_request () =
+  require_network ();
+  let raw =
+    String.concat ""
+      [
+        "POST /upload?x=1 HTTP/1.1\r\n";
+        "Content-Type: text/plain\r\n";
+        "Content-Length: 4\r\n";
+        "\r\n";
+        "ping";
+      ]
+  in
+  let response =
+    with_server
+      (fun req ->
+        check
+          (module Camelio.Method)
+          "method" Camelio.Method.POST (Camelio.Request.meth req);
+        check string "target" "/upload?x=1" (Camelio.Request.target req);
+        check string "path" "/upload" (Camelio.Request.path req);
+        check (option string) "content-type" (Some "text/plain")
+          (Camelio.Headers.get "content-type" (Camelio.Request.headers req));
+        check (option string) "content-length" (Some "4")
+          (Camelio.Headers.get "content-length" (Camelio.Request.headers req));
+        check bool "buffered" true
+          (Camelio.Body.is_buffered (Camelio.Request.body req));
+        check string "body" "ping"
+          (Camelio.Body.to_string (Camelio.Request.body req));
+        Camelio.Response.text "ok\n")
+      (request raw)
+  in
+  check bool
+    ("200 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
 let test_run_bad_request () =
   require_network ();
   let response =
     with_server
       (fun _ -> fail "handler should not run")
       (request "GET /bad path HTTP/1.1\r\n\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
+let test_run_bad_request_target_control () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> fail "handler should not run")
+      (request "GET /bad\tpath HTTP/1.1\r\n\r\n")
   in
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
@@ -136,7 +182,10 @@ let () =
           test_case "default max body size" `Quick
             test_default_max_request_body_size;
           test_case "run success" `Quick test_run_success;
+          test_case "run post request" `Quick test_run_post_request;
           test_case "run bad request" `Quick test_run_bad_request;
+          test_case "run bad request target control" `Quick
+            test_run_bad_request_target_control;
           test_case "run incomplete headers bad request" `Quick
             test_run_incomplete_headers_bad_request;
           test_case "run short body bad request" `Quick
