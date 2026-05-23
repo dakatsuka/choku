@@ -18,10 +18,10 @@ module Part = struct
   let filename t = t.filename
   let content_type t = t.content_type
   let body t = t.body
-  let copy_to_sink t sink = Eio.Flow.copy_string (Body.to_string t.body) sink
+  let copy_to_sink t sink = Body.copy_to_sink t.body sink
 
   let save_to_path ?append ~create path t =
-    Eio.Path.save ?append ~create path (Body.to_string t.body)
+    Body.save_to_path ?append ~create path t.body
 end
 
 type t = Part.t list

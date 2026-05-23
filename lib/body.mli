@@ -22,3 +22,11 @@ val with_source : t -> (Eio.Flow.source_ty Eio.Resource.t -> 'a) -> 'a
     Current bodies are buffered, so the source is replayable across separate
     [with_source] calls. Future streaming bodies may be single-consumption and
     scoped to the request handler. *)
+
+val copy_to_sink : t -> _ Eio.Flow.sink -> unit
+(** [copy_to_sink t sink] writes [t]'s bytes to [sink]. *)
+
+val save_to_path :
+  ?append:bool -> create:Eio.Fs.create -> _ Eio.Path.t -> t -> unit
+(** [save_to_path ?append ~create path t] writes [t]'s bytes to [path] using
+    {!Eio.Path.save}. *)

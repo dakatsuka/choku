@@ -20,6 +20,7 @@ None.
 - [Implement Buffered Multipart Form-Data](completed/0005-implement-buffered-multipart-form-data.md)
 - [Add Multipart Part Consumers](completed/0006-add-multipart-part-consumers.md)
 - [Add Buffered Body Source Access](completed/0007-add-buffered-body-source.md)
+- [Add Body Consumers](completed/0008-add-body-consumers.md)
 
 ## When To Create A Plan
 

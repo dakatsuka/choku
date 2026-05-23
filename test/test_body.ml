@@ -12,6 +12,27 @@ let test_body_source () =
   check string "source" "hello" (read ());
   check string "source replayable" "hello" (read ())
 
+let test_copy_to_sink () =
+  let buffer = Buffer.create 16 in
+  Camelio.Body.copy_to_sink
+    (Camelio.Body.string "hello")
+    (Eio.Flow.buffer_sink buffer);
+  check string "sink" "hello" (Buffer.contents buffer)
+
+let test_save_to_path () =
+  Eio_main.run @@ fun env ->
+  let path =
+    Eio.Path.(
+      Eio.Stdenv.fs env
+      / ("/tmp/camelio-body-" ^ string_of_int (Unix.getpid ()) ^ ".txt"))
+  in
+  Fun.protect
+    ~finally:(fun () -> try Eio.Path.unlink path with _ -> ())
+    (fun () ->
+      Camelio.Body.save_to_path ~create:(`Or_truncate 0o600) path
+        (Camelio.Body.string "hello");
+      check string "file" "hello" (Eio.Path.load path))
+
 let () =
   run "body"
     [
@@ -19,5 +40,7 @@ let () =
         [
           test_case "body values" `Quick test_body_values;
           test_case "body source" `Quick test_body_source;
+          test_case "copy to sink" `Quick test_copy_to_sink;
+          test_case "save to path" `Quick test_save_to_path;
         ] );
     ]
