@@ -1,0 +1,60 @@
+# Design Docs
+
+This directory is the source of truth for Camelio's technical design.
+
+## Current Documents
+
+- [Core Beliefs](core-beliefs.md)
+- [Initial Architecture](initial-architecture.md)
+- [ADR Index](adr/index.md)
+
+## When To Add Or Update A Design Doc
+
+Create or update a design document when a change affects:
+
+- module boundaries or package structure;
+- public APIs or long-lived internal interfaces;
+- concurrency, resource ownership, cancellation, or error handling;
+- parser, encoder, protocol, or network behavior;
+- performance, observability, reliability, or security posture.
+
+For a major specification change, update the relevant design document and add an
+ADR that records the decision, alternatives, and consequences.
+
+## Suggested Design Doc Template
+
+```markdown
+# Title
+
+## Status
+
+Draft | Accepted | Superseded
+
+## Context
+
+What problem exists, what constraints matter, and what prior documents apply?
+
+## Goals
+
+What must this design achieve?
+
+## Non-Goals
+
+What is intentionally out of scope?
+
+## Proposed Design
+
+Describe the architecture, interfaces, and important behaviors.
+
+## Alternatives Considered
+
+List credible alternatives and why they were not chosen.
+
+## Validation
+
+How will tests, benchmarks, examples, or reviews prove this design works?
+
+## Open Questions
+
+List unresolved decisions that block or shape implementation.
+```
