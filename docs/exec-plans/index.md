@@ -26,6 +26,7 @@ None.
 - [Split Server Request Reading](completed/0011-split-server-request-reading.md)
 - [Introduce Body Internal Variants](completed/0012-introduce-body-internal-variants.md)
 - [Build Server Request From Parsed Head](completed/0013-build-server-request-from-head.md)
+- [Add Opt-In Streaming Request Bodies](completed/0014-add-opt-in-streaming-request-bodies.md)
 
 ## When To Create A Plan
 

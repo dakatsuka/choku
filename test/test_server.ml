@@ -23,7 +23,8 @@ let test_default_max_request_body_size () =
   in
   check int "default" 1_048_576 (Camelio.Server.max_request_body_size server)
 
-let with_server handler f =
+let with_server ?(max_request_body_size = 4)
+    ?(request_body_mode = Camelio.Server.Buffered) handler f =
   Eio_main.run @@ fun env ->
   let net = Eio.Stdenv.net env in
   let clock = Eio.Stdenv.clock env in
@@ -38,7 +39,9 @@ let with_server handler f =
         | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
   in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
-  let server = Camelio.Server.create ~max_request_body_size:4 ~handler () in
+  let server =
+    Camelio.Server.create ~max_request_body_size ~request_body_mode ~handler ()
+  in
   let response = ref None in
   (try
      Eio.Switch.run @@ fun sw ->
@@ -114,6 +117,78 @@ let test_run_post_request () =
     true
     (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
 
+let test_run_streaming_post_request () =
+  require_network ();
+  let body = String.make 5_000 'x' in
+  let raw =
+    String.concat ""
+      [
+        "POST /upload HTTP/1.1\r\n";
+        "Content-Type: application/octet-stream\r\n";
+        "Content-Length: ";
+        string_of_int (String.length body);
+        "\r\n";
+        "\r\n";
+        body;
+      ]
+  in
+  let response =
+    with_server ~max_request_body_size:5_000
+      ~request_body_mode:Camelio.Server.Streaming
+      (fun req ->
+        let request_body = Camelio.Request.body req in
+        check bool "streaming" false (Camelio.Body.is_buffered request_body);
+        check (option string) "content-length" (Some "5000")
+          (Camelio.Headers.get "content-length" (Camelio.Request.headers req));
+        check_raises "streaming to_string"
+          (Invalid_argument "streaming body cannot be read with Body.to_string")
+          (fun () -> ignore (Camelio.Body.to_string request_body : string));
+        check
+          (result string (of_pp Camelio.Body.pp_error))
+          "body" (Ok body)
+          (Camelio.Body.to_string_limited ~max_size:5_000 request_body);
+        check_raises "single consumption"
+          (Invalid_argument "streaming body has already been consumed")
+          (fun () ->
+            ignore
+              (Camelio.Body.to_string_limited ~max_size:5_000 request_body
+                : (string, Camelio.Body.error) result));
+        Camelio.Response.text "ok\n")
+      (request raw)
+  in
+  check bool
+    ("200 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
+let test_run_streaming_unconsumed_body () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Camelio.Server.Streaming
+      (fun _req -> Camelio.Response.text "ok\n")
+      (request "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
+let test_run_streaming_short_body_source_error () =
+  require_network ();
+  let response =
+    with_server ~max_request_body_size:5
+      ~request_body_mode:Camelio.Server.Streaming
+      (fun req ->
+        match
+          Camelio.Body.with_source (Camelio.Request.body req) Eio.Flow.read_all
+        with
+        | _ -> Camelio.Response.text "unexpected\n"
+        | exception Camelio.Body.Unexpected_end_of_body_read ->
+            Camelio.Response.text ~status:Camelio.Status.bad_request "short\n")
+      (request "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhi")
+  in
+  check bool
+    ("400 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
 let test_run_bad_request () =
   require_network ();
   let response =
@@ -164,6 +239,38 @@ let test_run_payload_too_large () =
   check bool "413" true
     (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
 
+let test_run_streaming_payload_too_large () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Camelio.Server.Streaming
+      (fun _ -> fail "handler should not run")
+      (request "POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+  in
+  check bool "413" true
+    (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
+
+let test_run_streaming_unsupported_transfer_encoding () =
+  require_network ();
+  let raw =
+    String.concat ""
+      [
+        "POST / HTTP/1.1\r\n";
+        "Transfer-Encoding: chunked\r\n";
+        "\r\n";
+        "4\r\n";
+        "ping\r\n";
+        "0\r\n";
+        "\r\n";
+      ]
+  in
+  let response =
+    with_server ~request_body_mode:Camelio.Server.Streaming
+      (fun _ -> fail "handler should not run")
+      (request raw)
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
 let test_run_handler_exception () =
   require_network ();
   let response =
@@ -183,6 +290,12 @@ let () =
             test_default_max_request_body_size;
           test_case "run success" `Quick test_run_success;
           test_case "run post request" `Quick test_run_post_request;
+          test_case "run streaming post request" `Quick
+            test_run_streaming_post_request;
+          test_case "run streaming unconsumed body" `Quick
+            test_run_streaming_unconsumed_body;
+          test_case "run streaming short body source error" `Quick
+            test_run_streaming_short_body_source_error;
           test_case "run bad request" `Quick test_run_bad_request;
           test_case "run bad request target control" `Quick
             test_run_bad_request_target_control;
@@ -191,6 +304,10 @@ let () =
           test_case "run short body bad request" `Quick
             test_run_short_body_bad_request;
           test_case "run payload too large" `Quick test_run_payload_too_large;
+          test_case "run streaming payload too large" `Quick
+            test_run_streaming_payload_too_large;
+          test_case "run streaming unsupported transfer encoding" `Quick
+            test_run_streaming_unsupported_transfer_encoding;
           test_case "run handler exception" `Quick test_run_handler_exception;
         ] );
     ]

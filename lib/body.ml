@@ -2,12 +2,14 @@ type consumption_state = Fresh | Consuming | Consumed [@@warning "-37"]
 
 type streaming = {
   source : Eio.Flow.source_ty Eio.Resource.t;
-  max_size : int option;
+  content_length : int;
   mutable state : consumption_state;
 }
 
 type t = Buffered of string | Streaming of streaming [@@warning "-37"]
-type error = Body_too_large
+type error = Body_too_large | Unexpected_end_of_body
+
+exception Unexpected_end_of_body_read
 
 let empty = Buffered ""
 let string s = Buffered s
@@ -28,21 +30,29 @@ let with_streaming_source streaming fn =
   | Consumed -> invalid_arg "streaming body has already been consumed"
 
 let to_string_limited_streaming ~max_size streaming =
-  match streaming.max_size with
-  | Some body_size when body_size > max_size -> Error Body_too_large
+  match streaming.content_length with
+  | body_size when body_size > max_size -> Error Body_too_large
   | _ ->
       with_streaming_source streaming @@ fun source ->
       let buffer = Buffer.create (min max_size 4096) in
       let scratch = Cstruct.create 4096 in
       let rec read_loop total =
-        match Eio.Flow.single_read source scratch with
-        | exception End_of_file -> Ok (Buffer.contents buffer)
-        | read ->
-            if total + read > max_size then Error Body_too_large
-            else (
+        if total = streaming.content_length then Ok (Buffer.contents buffer)
+        else
+          let remaining = streaming.content_length - total in
+          let read_buffer =
+            if remaining < Cstruct.length scratch then
+              Cstruct.sub scratch 0 remaining
+            else scratch
+          in
+          match Eio.Flow.single_read source read_buffer with
+          | exception End_of_file -> Error Unexpected_end_of_body
+          | exception Unexpected_end_of_body_read ->
+              Error Unexpected_end_of_body
+          | read ->
               Buffer.add_string buffer
-                (Cstruct.to_string (Cstruct.sub scratch 0 read));
-              read_loop (total + read))
+                (Cstruct.to_string (Cstruct.sub read_buffer 0 read));
+              read_loop (total + read)
       in
       read_loop 0
 
@@ -72,3 +82,11 @@ let save_to_path ?append ~create path t =
 
 let pp_error formatter = function
   | Body_too_large -> Format.pp_print_string formatter "body too large"
+  | Unexpected_end_of_body ->
+      Format.pp_print_string formatter "unexpected end of body"
+
+module Internal = struct
+  let streaming ~content_length source =
+    if content_length < 0 then invalid_arg "negative content_length";
+    Streaming { source; content_length; state = Fresh }
+end

@@ -1,11 +1,23 @@
-type t = { max_request_body_size : int; handler : Handler.t }
+[@@@alert "-internal"]
+
+type request_body_mode = Buffered | Streaming
+
+type t = {
+  max_request_body_size : int;
+  request_body_mode : request_body_mode;
+  handler : Handler.t;
+}
 
 let default_max_request_body_size = 1_048_576
 
 let create ?(max_request_body_size = default_max_request_body_size)
-    ?(middlewares = []) ~handler () =
+    ?(request_body_mode = Buffered) ?(middlewares = []) ~handler () =
   if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
-  { max_request_body_size; handler = Middleware.apply middlewares handler }
+  {
+    max_request_body_size;
+    request_body_mode;
+    handler = Middleware.apply middlewares handler;
+  }
 
 let max_request_body_size t = t.max_request_body_size
 let handle t request = t.handler request
@@ -30,6 +42,59 @@ let find_header_end buffer =
   loop 0
 
 type request_head_read = { buffered_body : string; head : Http1.request_head }
+
+type fixed_body_source = {
+  prefix : string;
+  mutable prefix_offset : int;
+  live : Eio.Flow.source_ty Eio.Resource.t;
+  mutable remaining : int;
+}
+
+module Fixed_body_source = struct
+  type t = fixed_body_source
+
+  let read_methods = []
+
+  let single_read t buffer =
+    if t.remaining = 0 then raise End_of_file;
+    let capacity = Cstruct.length buffer in
+    let read_limit = min capacity t.remaining in
+    let prefix_available = String.length t.prefix - t.prefix_offset in
+    if prefix_available > 0 then (
+      let read = min read_limit prefix_available in
+      Cstruct.blit_from_string t.prefix t.prefix_offset buffer 0 read;
+      t.prefix_offset <- t.prefix_offset + read;
+      t.remaining <- t.remaining - read;
+      read)
+    else
+      let read_buffer =
+        if read_limit < capacity then Cstruct.sub buffer 0 read_limit
+        else buffer
+      in
+      let read =
+        match Eio.Flow.single_read t.live read_buffer with
+        | read -> read
+        | exception End_of_file -> raise Body.Unexpected_end_of_body_read
+      in
+      t.remaining <- t.remaining - read;
+      read
+end
+
+let fixed_body_source flow buffered_body content_length =
+  let prefix =
+    if String.length buffered_body > content_length then
+      String.sub buffered_body 0 content_length
+    else buffered_body
+  in
+  let remaining = content_length in
+  Eio.Resource.T
+    ( {
+        prefix;
+        prefix_offset = 0;
+        live = (flow :> Eio.Flow.source_ty Eio.Resource.t);
+        remaining;
+      },
+      Eio.Flow.Pi.source (module Fixed_body_source) )
 
 let read_request_head flow =
   let buffer = Buffer.create 4096 in
@@ -74,14 +139,26 @@ let read_fixed_body ~max_request_body_size flow head buffered_body =
           | exception End_of_file -> Error Http1.Invalid_content_length
           | () -> Ok (buffered_body ^ Cstruct.to_string exact))
 
-let request_of_head head body =
+let request_of_head_body head body =
   try
     Request.make ~meth:head.Http1.meth ~target:head.target ~headers:head.headers
-      ~body:(Body.string body)
+      ~body
     |> Result.ok
   with Invalid_argument _ -> Error Http1.Unsupported_request_target
 
-let read_request max_request_body_size flow =
+let request_of_head head body = request_of_head_body head (Body.string body)
+
+let streaming_request_of_head ~max_request_body_size flow head buffered_body =
+  match Http1.content_length head.Http1.headers with
+  | Error error -> Error error
+  | Ok content_length ->
+      if content_length > max_request_body_size then Error Http1.Body_too_large
+      else
+        let source = fixed_body_source flow buffered_body content_length in
+        let body = Body.Internal.streaming ~content_length source in
+        request_of_head_body head body
+
+let read_buffered_request max_request_body_size flow =
   match read_request_head flow with
   | Error error -> Error error
   | Ok { buffered_body; head } -> (
@@ -89,12 +166,23 @@ let read_request max_request_body_size flow =
       | Error error -> Error error
       | Ok body -> request_of_head head body)
 
+let read_streaming_request max_request_body_size flow =
+  match read_request_head flow with
+  | Error error -> Error error
+  | Ok { buffered_body; head } ->
+      streaming_request_of_head ~max_request_body_size flow head buffered_body
+
+let read_request t flow =
+  match t.request_body_mode with
+  | Buffered -> read_buffered_request t.max_request_body_size flow
+  | Streaming -> read_streaming_request t.max_request_body_size flow
+
 let write_response flow response =
   Eio.Flow.copy_string (Http1.serialize_response response) flow
 
 let handle_connection t flow =
   let response =
-    match read_request t.max_request_body_size flow with
+    match read_request t flow with
     | Error error -> Http1.response_for_error error
     | Ok request -> (
         try t.handler request with

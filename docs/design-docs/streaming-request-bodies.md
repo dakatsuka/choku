@@ -41,6 +41,10 @@ Introduce a body representation with two modes:
 module Body : sig
   type t
 
+  type error =
+    | Body_too_large
+    | Unexpected_end_of_body
+
   val empty : t
   val string : string -> t
   val to_string : t -> string
@@ -56,15 +60,38 @@ source for both buffered and streaming bodies. For buffered bodies, the source i
 created from the stored string. For streaming bodies, the source is the live
 request stream scoped to the handler invocation.
 
-`Body.to_string` remains convenient for existing buffered workflows.
+`Body.to_string` remains convenient for existing buffered workflows and raises
+`Invalid_argument` for streaming bodies.
 `Body.to_string_limited` is the preferred API for code that may later receive
 streaming bodies because it makes in-memory reads explicitly bounded. The
 streaming implementation should preserve `to_string_limited` as the safe
-consuming read path.
+consuming read path. If a streaming body ends before the declared body length,
+`to_string_limited` returns `Unexpected_end_of_body`.
+
+Server streaming is opt-in:
+
+```ocaml
+module Server : sig
+  type request_body_mode = Buffered | Streaming
+
+  val create :
+    ?max_request_body_size:int ->
+    ?request_body_mode:request_body_mode ->
+    ?middlewares:Middleware.t list ->
+    handler:Handler.t ->
+    unit ->
+    t
+end
+```
+
+`Buffered` is the default and preserves replayable request bodies. `Streaming`
+validates `Content-Length` before handler invocation, rejects declared
+over-limit bodies before invoking the handler, and passes a single-consumption
+body source capped to the declared length.
 
 The server should invoke handlers before fully reading streaming bodies. The
 request body source remains valid only while the handler is running. If the
-handler returns without consuming the body, the HTTP/1.1 server may close the
+handler returns without consuming the body, the HTTP/1.1 server closes the
 connection instead of attempting connection reuse. This is acceptable for the
 current close-oriented HTTP/1.1 implementation.
 
@@ -114,10 +141,9 @@ Before implementation:
 
 ## Open Questions
 
-- Should `Body.to_string` raise on streaming bodies or require a max-size
-  parameter?
-- Should streaming bodies be single-consumption by type, by runtime state, or by
-  documentation?
-- Should the server expose a per-route or per-server body buffering policy?
+- Should streaming bodies be single-consumption by type instead of runtime
+  state?
+- Should the server expose per-route body buffering policy in addition to
+  per-server mode?
 - How should future HTTP/2 flow control integrate with the same `Body.t`
   abstraction?

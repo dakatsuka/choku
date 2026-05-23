@@ -39,13 +39,21 @@ designed.
 - The server parses headers using the shared `Headers.t` contract.
 - The server supports request bodies only when `Content-Length` is present and
   valid.
-- Request bodies are buffered and replayable as `Body.t`.
+- Request bodies are buffered and replayable as `Body.t` by default.
+- When `Server.create ?request_body_mode:Streaming` is used, request bodies are
+  single-consumption and backed by an Eio source scoped to the handler
+  invocation.
 - The default maximum request body size is `1_048_576` bytes.
 - Users can override the maximum request body size with
   `Server.create ?max_request_body_size`.
 - Requests whose declared or decoded body exceeds the maximum size do not invoke
   the handler. When possible, the server responds with `413 Payload Too Large`,
   `connection: close`, and then closes the connection.
+- Streaming request bodies are capped to the declared `Content-Length`. The
+  server does not expose bytes beyond that body length to the handler.
+- If a streaming body ends before the declared `Content-Length`,
+  `Body.to_string_limited` returns `Unexpected_end_of_body`; lower-level source
+  consumers observe `Body.Unexpected_end_of_body_read` from the source.
 - The server rejects unsupported request-target forms before handler invocation.
 - The server rejects unsupported transfer encodings before handler invocation.
 - Responses are serialized with a status line, headers, and buffered body.

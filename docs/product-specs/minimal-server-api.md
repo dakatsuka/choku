@@ -47,10 +47,15 @@ Eio-native HTTP server before higher-level routing DSLs exist.
 - Future HTTP/2 and HTTP/3 implementations must be able to reuse the handler and
   middleware contract when their protocol semantics can be represented as shared
   request and response values.
-- First-milestone request bodies are buffered and replayable. Streaming bodies
-  are deferred behind abstract body types.
+- Request bodies are buffered and replayable by default. Applications may opt
+  into streaming request bodies with `Server.create ?request_body_mode`.
 - The default maximum request body size is `1_048_576` bytes and can be
   overridden with `Server.create ?max_request_body_size`.
+- `Server.create ?request_body_mode:Buffered` reads the full request body before
+  invoking the handler and provides a replayable `Body.t`.
+- `Server.create ?request_body_mode:Streaming` invokes the handler with a
+  single-consumption `Body.t` backed by a source capped to the declared
+  `Content-Length`.
 - Over-limit request bodies do not invoke the handler and produce
   `413 Payload Too Large` with `connection: close` when a response can still be
   written.
@@ -79,7 +84,9 @@ Public `.mli` files must document these contracts with block comments.
 
 The first milestone also exposes abstract `Request.t`, `Response.t`, and
 `Body.t` types with constructors/accessors for method, target, path, headers,
-status, and buffered body values.
+status, and body values. Bodies constructed directly with `Body.string` are
+buffered and replayable. Server-created streaming bodies are single-consumption
+and handler-scoped.
 
 Header lookup is case-insensitive. `Request.path` is derived from valid
 origin-form request targets by removing the query string. Unsupported
