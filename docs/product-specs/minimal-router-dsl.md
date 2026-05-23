@@ -46,6 +46,10 @@ without making routing mandatory for the server.
   `/users/` and `/users//posts` are rejected during registration.
 - Route parameters are exposed through `Router.Params.t`, not by mutating or
   extending `Request.t`.
+- A later route-level body mode milestone may allow routes to opt into
+  streaming request bodies before the server reads the body. That feature must
+  preserve current `Router.to_handler` behavior for tests and server-wide body
+  mode users.
 - Missing routes return a configurable not-found handler, defaulting to `404 Not
   Found` with a text body.
 - Invalid route patterns raise `Invalid_argument` during route registration.
@@ -81,6 +85,12 @@ module Router : sig
 end
 ```
 
+Future route-level body-mode extension is specified in
+[Route-Level Body Mode](../design-docs/route-level-body-mode.md). The expected
+extension adds optional `?request_body_mode` arguments to route registration and
+a server entry point that accepts `Router.t` directly, while preserving this
+baseline `Router.to_handler` contract.
+
 Public `.mli` files must document these contracts with block comments.
 
 ## Examples
@@ -102,6 +112,19 @@ let server =
     ()
 ```
 
+Future route-level streaming body mode:
+
+```ocaml
+let router =
+  Camelio.Router.empty
+  |> Camelio.Router.post
+       ~request_body_mode:Camelio.Request_body_mode.Streaming
+       "/upload"
+       upload
+
+let server = Camelio.Server.create_router router
+```
+
 ## Open Questions
 
 - Should a later router milestone add regex segments or typed path converters?
@@ -111,3 +134,5 @@ let server =
   URI module?
 - Should a later router milestone support trailing-slash routes or repeated
   slash semantics?
+- Should route-level body mode be exposed only through `Server.create_router`,
+  or should a generic pre-body selector API also be public?

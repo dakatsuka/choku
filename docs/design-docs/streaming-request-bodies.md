@@ -151,6 +151,7 @@ Before implementation:
 - Should streaming bodies be single-consumption by type instead of runtime
   state?
 - Should the server expose per-route body buffering policy in addition to
-  per-server mode?
+  per-server mode? A proposed design is captured in
+  [Route-Level Body Mode](route-level-body-mode.md).
 - How should future HTTP/2 flow control integrate with the same `Body.t`
   abstraction?

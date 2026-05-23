@@ -213,5 +213,5 @@ let handler ~upload_dir ~random request =
 
 - Should future helpers add a higher-level upload storage policy, or leave that
   entirely to applications?
-- Should multipart streaming add route-level body mode integration once server
-  routing policy exists?
+- Should multipart streaming use the future route-level body mode integration
+  described in [Route-Level Body Mode](../design-docs/route-level-body-mode.md)?

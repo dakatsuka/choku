@@ -31,6 +31,7 @@ None.
 - [Add Streaming Multipart Iterator](completed/0016-add-streaming-multipart-iterator.md)
 - [Add Streaming Multipart Integration](completed/0017-add-streaming-multipart-integration.md)
 - [Add Multipart Tempfile Helper](completed/0018-add-multipart-tempfile-helper.md)
+- [Design Route-Level Body Mode](completed/0019-design-route-level-body-mode.md)
 
 ## When To Create A Plan
 
