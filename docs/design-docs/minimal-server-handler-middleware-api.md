@@ -209,6 +209,26 @@ Connection-level concerns such as socket accept loops, per-connection switches,
 read timeouts, and protocol errors should remain in `Server` or HTTP protocol
 modules rather than middleware.
 
+## Handler And Middleware Flow
+
+```mermaid
+flowchart LR
+  request[Request.t]
+  first[Middleware a]
+  second[Middleware b]
+  third[Middleware c]
+  handler[Handler.t]
+  response[Response.t]
+
+  request --> first --> second --> third --> handler
+  handler --> third --> second --> first --> response
+```
+
+`Middleware.apply [a; b; c] handler` builds `a (b (c handler))`. The first
+middleware in the list sees the request before later middleware and sees the
+response after later middleware. The server composes the stack once at
+`Server.create` time and stores the resulting handler.
+
 ## Minimal HTTP Type Contract
 
 `Request.t`, `Response.t`, and body types should be abstract in public

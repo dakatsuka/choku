@@ -68,6 +68,39 @@ belongs in `Camelio.Http1`. Future HTTP/2 and HTTP/3 support should add
 version-specific modules that translate between protocol frames/streams and the
 shared request/response values where that mapping is valid.
 
+## Architecture Overview
+
+```mermaid
+flowchart LR
+  client[HTTP client]
+  server[Server accept loop]
+  http1[Http1 parser and encoder]
+  request[Request.t]
+  middleware[Middleware stack]
+  handler[Handler.t or Router handler]
+  response[Response.t]
+  body[Body.t]
+
+  client -->|TCP flow| server
+  server -->|connection fiber| http1
+  http1 -->|parse request head and body| request
+  request --> middleware
+  middleware --> handler
+  handler --> response
+  response --> middleware
+  middleware --> http1
+  http1 -->|encode response| client
+
+  request --- body
+  response --- body
+```
+
+The server owns listening, connection fibers, and request lifecycle. `Http1`
+owns HTTP/1.1 parsing and encoding. Handlers, middleware, and routers operate on
+the shared HTTP value layer and do not depend on protocol-specific parser state.
+Future HTTP/2, HTTP/3, and client modules should translate to or from the same
+shared values where their protocol semantics allow it.
+
 ## Concurrency Model
 
 Each accepted connection should run in an Eio fiber attached to the caller-owned

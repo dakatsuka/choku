@@ -111,6 +111,42 @@ entry point rather than overloading `Server.create ~handler`. A plain
 `Handler.t` does not contain enough structured routing information to select
 body mode before body reading.
 
+## Pre-Body Selection Flow
+
+```mermaid
+flowchart TD
+  head[Parse HTTP request head]
+  entry{Server entry point}
+  direct[Server.create handler]
+  router[Server.create_router router]
+  serverMode[Use server-wide body mode]
+  match[Match method and path]
+  matched{Route matched}
+  routeMode[Use route body mode]
+  fallback[Use Buffered fallback]
+  limit[Validate Content-Length and body limit]
+  delivery{Selected body mode}
+  buffered[Read full buffered body]
+  streaming[Expose capped streaming body]
+  request[Build Request.t]
+  invoke[Run middleware and handler]
+
+  head --> entry
+  entry --> direct --> serverMode --> limit
+  entry --> router --> match --> matched
+  matched -->|yes| routeMode --> limit
+  matched -->|no| fallback --> limit
+  limit --> delivery
+  delivery -->|Buffered| buffered --> request
+  delivery -->|Streaming| streaming --> request
+  request --> invoke
+```
+
+Route-level body mode is selected after request-head parsing and before the
+body is read. The same router match decides both the body mode and the handler.
+Unmatched requests use `Buffered`, which keeps not-found handling replayable and
+consistent with the server default.
+
 ## Matching And Fallback Semantics
 
 The route selected for body mode must be the same route that handles the
