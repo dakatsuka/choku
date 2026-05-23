@@ -31,6 +31,13 @@ let test_static_route_matches () =
   in
   check string "body" "ok" (response_body (call router "/health"))
 
+let test_unused_route_arguments_can_be_underscores () =
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.get "/health" (fun _ _ -> Camelio.Response.text "ok")
+  in
+  check string "body" "ok" (response_body (call router "/health"))
+
 let test_method_must_match () =
   let router =
     Camelio.Router.empty |> Camelio.Router.post "/submit" (text "ok")
@@ -196,6 +203,8 @@ let () =
       ( "router",
         [
           test_case "static route matches" `Quick test_static_route_matches;
+          test_case "unused route arguments can be underscores" `Quick
+            test_unused_route_arguments_can_be_underscores;
           test_case "method must match" `Quick test_method_must_match;
           test_case "first registered route wins" `Quick
             test_first_registered_route_wins;

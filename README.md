@@ -72,8 +72,8 @@ Use the router when you want path parameters and first-match routing:
 let router =
   let open Camelio in
   Router.empty
-  |> Router.get "/" (fun _params _request -> Response.text "hello\n")
-  |> Router.get "/users/:id" (fun params _request ->
+  |> Router.get "/" (fun _ _ -> Response.text "hello\n")
+  |> Router.get "/users/:id" (fun params _ ->
          match Router.Params.get "id" params with
          | None -> Response.text ~status:Status.not_found "not found\n"
          | Some id -> Response.text (Printf.sprintf "user %s\n" id))
@@ -102,7 +102,7 @@ let upload params request =
 let router =
   let open Camelio in
   Router.empty
-  |> Router.get "/health" (fun _params _request -> Response.text "ok\n")
+  |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
   |> Router.post
        ~request_body_mode:Request_body_mode.Streaming
        "/users/:id/avatar"
