@@ -29,6 +29,14 @@ let test_reject_space_in_target () =
   check_raises "space in target" (Invalid_argument "invalid origin-form target")
     (fun () -> ignore (request "/bad path" : Camelio.Request.t))
 
+let test_reject_control_targets () =
+  List.iter
+    (fun target ->
+      check_raises ("invalid " ^ target)
+        (Invalid_argument "invalid origin-form target") (fun () ->
+          ignore (request target : Camelio.Request.t)))
+    [ "/bad\tpath"; "/bad\rpath"; "/bad\npath"; "" ]
+
 let () =
   run "request"
     [
@@ -40,5 +48,6 @@ let () =
             test_path_can_be_split_for_direct_matching;
           test_case "invalid target" `Quick test_invalid_target;
           test_case "space in target" `Quick test_reject_space_in_target;
+          test_case "control targets" `Quick test_reject_control_targets;
         ] );
     ]

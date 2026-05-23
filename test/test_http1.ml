@@ -65,6 +65,8 @@ let test_reject_invalid_content_length () =
       "POST / HTTP/1.1\r\nContent-Length: +5\r\n\r\nhello";
       "POST / HTTP/1.1\r\nContent-Length: 1_0\r\n\r\nhello";
       "POST / HTTP/1.1\r\nContent-Length: 0x10\r\n\r\nhello";
+      "POST / HTTP/1.1\r\nContent-Length: 5, 5\r\n\r\nhello";
+      "POST / HTTP/1.1\r\nContent-Length: 999999999999999999999999\r\n\r\n";
       "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello!";
       "POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: bad\r\n\r\nhello";
     ]
@@ -84,12 +86,39 @@ let test_allow_identical_content_length () =
   check string "body" "hello"
     (Camelio.Body.to_string (Camelio.Request.body request))
 
+let test_reject_transfer_encoding_content_length_smuggling () =
+  let cases =
+    [
+      "POST / HTTP/1.1\r\n\
+       Transfer-Encoding: chunked\r\n\
+       Content-Length: 4\r\n\
+       \r\n\
+       4\r\n\
+       ping\r\n\
+       0\r\n\
+       \r\n";
+      "POST / HTTP/1.1\r\n\
+       Content-Length: 4\r\n\
+       Transfer-Encoding: gzip\r\n\
+       \r\n\
+       ping";
+    ]
+  in
+  List.iter
+    (fun raw ->
+      check
+        (module Camelio.Http1.Error)
+        "error" Camelio.Http1.Unsupported_transfer_encoding (parse_error raw))
+    cases
+
 let test_reject_malformed_header_names () =
   let cases =
     [
       "GET / HTTP/1.1\r\nBad Name: x\r\n\r\n";
       "GET / HTTP/1.1\r\n\tBad: x\r\n\r\n";
+      "GET / HTTP/1.1\r\n Bad: x\r\n\r\n";
       "GET / HTTP/1.1\r\nBad\001Name: x\r\n\r\n";
+      "GET / HTTP/1.1\r\nBad: ok\rInjected: yes\r\n\r\n";
     ]
   in
   List.iter
@@ -100,10 +129,26 @@ let test_reject_malformed_header_names () =
     cases
 
 let test_reject_request_target_controls () =
-  check
-    (module Camelio.Http1.Error)
-    "error" Camelio.Http1.Unsupported_request_target
-    (parse_error "GET /bad\tpath HTTP/1.1\r\n\r\n")
+  let cases =
+    [
+      "GET /bad\tpath HTTP/1.1\r\n\r\n";
+      "GET http://example.test/ HTTP/1.1\r\n\r\n";
+      "CONNECT example.test:443 HTTP/1.1\r\n\r\n";
+    ]
+  in
+  List.iter
+    (fun raw ->
+      check
+        (module Camelio.Http1.Error)
+        "error" Camelio.Http1.Unsupported_request_target (parse_error raw))
+    cases
+
+let test_body_is_capped_to_content_length () =
+  let request =
+    parse_ok "POST /echo HTTP/1.1\r\nContent-Length: 4\r\n\r\npingGET /evil"
+  in
+  check string "body" "ping"
+    (Camelio.Body.to_string (Camelio.Request.body request))
 
 let test_reject_over_limit_body () =
   check
@@ -145,10 +190,14 @@ let () =
             test_reject_invalid_content_length;
           test_case "allow identical Content-Length" `Quick
             test_allow_identical_content_length;
+          test_case "reject transfer-encoding content-length smuggling" `Quick
+            test_reject_transfer_encoding_content_length_smuggling;
           test_case "reject malformed header names" `Quick
             test_reject_malformed_header_names;
           test_case "reject request target controls" `Quick
             test_reject_request_target_controls;
+          test_case "body is capped to content-length" `Quick
+            test_body_is_capped_to_content_length;
           test_case "reject over limit body" `Quick test_reject_over_limit_body;
           test_case "serialize response" `Quick test_serialize_response;
         ] );

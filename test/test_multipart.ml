@@ -95,6 +95,8 @@ let test_filename_sanitize () =
   check string "blank fallback" "upload" (sanitize "   ");
   check string "unsafe fallback" "upload" (sanitize "../../../");
   check string "fallback length" "upl" (sanitize ~max_length:3 "../../../");
+  check string "nul" "foo-bar.jpg" (sanitize "foo\x00bar.jpg");
+  check string "crlf" "foo-bar.jpg" (sanitize "foo\r\nbar.jpg");
   check string "length" "avatar" (sanitize ~max_length:6 "avatar-image.jpg");
   check_raises "invalid max length" (Invalid_argument "non-positive max_length")
     (fun () -> ignore (sanitize ~max_length:0 "avatar.jpg" : string))
@@ -247,6 +249,25 @@ let test_quoted_parameter_semicolon () =
   | Some part ->
       check (option string) "filename" (Some "a;b.txt")
         (Camelio.Multipart.Part.filename part)
+
+let test_filename_sanitize_path_traversal_from_part () =
+  let body =
+    "--AaB03x\r\n\
+     Content-Disposition: form-data; name=\"file\"; \
+     filename=\"../../.ssh/id_rsa\"\r\n\
+     \r\n\
+     content\r\n\
+     --AaB03x--\r\n"
+  in
+  let multipart = Camelio.Multipart.decode ~boundary body |> expect_multipart in
+  match Camelio.Multipart.get "file" multipart with
+  | None -> fail "expected file part"
+  | Some part ->
+      check (option string) "raw filename" (Some "../../.ssh/id_rsa")
+        (Camelio.Multipart.Part.filename part);
+      check string "sanitized" "ssh-id_rsa"
+        (Camelio.Multipart.Part.filename part
+        |> Option.value ~default:"" |> Camelio.Multipart.Filename.sanitize)
 
 let test_of_request_extracts_quoted_boundary () =
   let request =
@@ -599,6 +620,7 @@ let test_decode_rejects_malformed_body () =
       "--AaB03x\r\nContent-Disposition: form-data; name=\"a\"\r\n";
       "--wrong\r\n\r\nbody\r\n--wrong--\r\n";
       "--AaB03x\r\nBad Header\r\n\r\nbody\r\n--AaB03x--\r\n";
+      "--AaB03x\r\nX-Test: ok\rbad\r\n\r\nbody\r\n--AaB03x--\r\n";
       "--AaB03x\r\n\
       \ Content-Disposition: form-data; name=\"a\"\r\n\
        \r\n\
@@ -651,6 +673,8 @@ let () =
             test_get_and_get_all_preserve_order;
           test_case "quoted parameter semicolon" `Quick
             test_quoted_parameter_semicolon;
+          test_case "filename sanitize path traversal from part" `Quick
+            test_filename_sanitize_path_traversal_from_part;
           test_case "of_request extracts quoted boundary" `Quick
             test_of_request_extracts_quoted_boundary;
           test_case "of_request_limited extracts quoted boundary" `Quick

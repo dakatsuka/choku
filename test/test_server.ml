@@ -342,6 +342,61 @@ let test_run_streaming_unsupported_transfer_encoding () =
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
 
+let test_run_rejects_transfer_encoding_content_length_smuggling () =
+  require_network ();
+  let handler_ran = ref false in
+  let raw =
+    String.concat ""
+      [
+        "POST / HTTP/1.1\r\n";
+        "Transfer-Encoding: chunked\r\n";
+        "Content-Length: 4\r\n";
+        "\r\n";
+        "4\r\n";
+        "ping\r\n";
+        "0\r\n";
+        "\r\n";
+      ]
+  in
+  let response =
+    with_server
+      (fun _ ->
+        handler_ran := true;
+        Camelio.Response.text "unexpected\n")
+      (request raw)
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler not run" false !handler_ran
+
+let test_run_rejects_malformed_folded_header () =
+  require_network ();
+  let handler_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        handler_ran := true;
+        Camelio.Response.text "unexpected\n")
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n folded: yes\r\n\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler not run" false !handler_ran
+
+let test_run_streaming_body_is_capped_to_content_length () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Camelio.Server.Streaming
+      (fun req ->
+        check
+          (result string (of_pp Camelio.Body.pp_error))
+          "body" (Ok "ping")
+          (Camelio.Body.to_string_limited ~max_size:4 (Camelio.Request.body req));
+        Camelio.Response.text "ok\n")
+      (request "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\npingGET /evil")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
 let test_run_router_buffered_route () =
   require_network ();
   let router =
@@ -654,6 +709,12 @@ let () =
             test_run_streaming_payload_too_large;
           test_case "run streaming unsupported transfer encoding" `Quick
             test_run_streaming_unsupported_transfer_encoding;
+          test_case "run rejects transfer-encoding content-length smuggling"
+            `Quick test_run_rejects_transfer_encoding_content_length_smuggling;
+          test_case "run rejects malformed folded header" `Quick
+            test_run_rejects_malformed_folded_header;
+          test_case "run streaming body is capped to content-length" `Quick
+            test_run_streaming_body_is_capped_to_content_length;
           test_case "run router buffered route" `Quick
             test_run_router_buffered_route;
           test_case "run router streaming route" `Quick

@@ -33,6 +33,7 @@ None.
 - [Add Multipart Tempfile Helper](completed/0018-add-multipart-tempfile-helper.md)
 - [Design Route-Level Body Mode](completed/0019-design-route-level-body-mode.md)
 - [Implement Route-Level Body Mode](completed/0020-implement-route-level-body-mode.md)
+- [Add HTTP Security Regression Tests](completed/0021-add-http-security-regression-tests.md)
 
 ## When To Create A Plan
 
