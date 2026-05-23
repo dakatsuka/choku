@@ -20,7 +20,8 @@ module Filename : sig
       The result contains only ASCII letters, digits, [.], [_], and [-]. Unsafe
       characters, including path separators, are replaced with [-]. Repeated
       replacement characters and repeated periods are collapsed, leading periods
-      and separators are removed, and an empty result falls back to ["upload"].
+      and separators are removed, and an empty result falls back to ["upload"]
+      truncated to [max_length].
 
       [max_length] defaults to [255].
 

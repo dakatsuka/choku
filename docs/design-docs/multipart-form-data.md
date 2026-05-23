@@ -98,7 +98,8 @@ does not choose a destination directory, prevent overwrites, validate file
 content, or make the original filename trustworthy. It replaces unsafe
 characters, including path separators, with `-`; collapses repeated separators
 and periods; removes leading periods and separators; truncates to `max_length`
-bytes; and falls back to `upload` when no safe characters remain.
+bytes; and falls back to `upload`, truncated to `max_length`, when no safe
+characters remain.
 
 `Multipart.Tempfile.save_source` writes a source to a generated temporary file
 under an application-provided Eio directory capability. The helper also backs

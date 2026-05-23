@@ -50,8 +50,8 @@ parts.
   filesystem-friendly filename candidate for applications that need to retain a
   client supplied display name. It replaces path separators and other unsafe
   characters with `-`, collapses repeated separators and periods, removes
-  leading periods and separators, and falls back to `upload` when no safe
-  characters remain.
+  leading periods and separators, and falls back to `upload`, truncated to
+  `max_length`, when no safe characters remain.
 - `Multipart.Tempfile.save_source` and `Multipart.Tempfile.save_part` write
   upload bytes to generated temporary files under an application-provided Eio
   directory capability. Storage names are generated from an explicit random
