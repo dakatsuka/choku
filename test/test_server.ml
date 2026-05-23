@@ -17,6 +17,44 @@ let test_create_applies_middleware () =
   check (option string) "middleware header" (Some "yes")
     (Camelio.Headers.get "x-middleware" (Camelio.Response.headers response))
 
+let test_create_router_applies_middleware () =
+  let middleware next req =
+    next req |> Camelio.Response.with_header "x-router-middleware" "yes"
+  in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.get "/" (fun _ _ -> Camelio.Response.text "ok")
+  in
+  let server =
+    Camelio.Server.create_router ~middlewares:[ middleware ] router
+  in
+  let response = Camelio.Server.handle server request in
+  check (option string) "middleware header" (Some "yes")
+    (Camelio.Headers.get "x-router-middleware"
+       (Camelio.Response.headers response))
+
+let test_create_router_handle_uses_existing_request_body () =
+  let request =
+    Camelio.Request.make ~meth:Camelio.Method.POST ~target:"/upload"
+      ~headers:Camelio.Headers.empty
+      ~body:(Camelio.Body.string "ping")
+  in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.post
+         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
+         (fun _ req ->
+           check bool "handle body remains buffered" true
+             (Camelio.Body.is_buffered (Camelio.Request.body req));
+           check string "body" "ping"
+             (Camelio.Body.to_string (Camelio.Request.body req));
+           Camelio.Response.text "ok")
+  in
+  let server = Camelio.Server.create_router router in
+  let response = Camelio.Server.handle server request in
+  check int "status" 200
+    (Camelio.Status.code (Camelio.Response.status response))
+
 let test_default_max_request_body_size () =
   let server =
     Camelio.Server.create ~handler:(fun _ -> Camelio.Response.text "ok") ()
@@ -42,6 +80,39 @@ let with_server ?(max_request_body_size = 4)
   let server =
     Camelio.Server.create ~max_request_body_size ~request_body_mode ~handler ()
   in
+  let response = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     Eio.Fiber.fork ~sw (fun () -> Camelio.Server.run ~sw ~net ~addr server);
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       match Eio.Net.connect ~sw:client_sw net addr with
+       | flow -> f flow
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     response := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  match !response with Some response -> response | None -> fail "no response"
+
+let with_router_server ?(max_request_body_size = 4) router f =
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let port =
+    let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close socket)
+      (fun () ->
+        Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
+        match Unix.getsockname socket with
+        | Unix.ADDR_INET (_, port) -> port
+        | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
+  in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let server = Camelio.Server.create_router ~max_request_body_size router in
   let response = ref None in
   (try
      Eio.Switch.run @@ fun sw ->
@@ -271,6 +342,103 @@ let test_run_streaming_unsupported_transfer_encoding () =
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
 
+let test_run_router_buffered_route () =
+  require_network ();
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.post "/buffered" (fun _ req ->
+        let body = Camelio.Request.body req in
+        check bool "buffered" true (Camelio.Body.is_buffered body);
+        check string "body" "ping" (Camelio.Body.to_string body);
+        Camelio.Response.text "buffered\n")
+  in
+  let response =
+    with_router_server router
+      (request "POST /buffered HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+  in
+  check bool
+    ("200 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "body" true (String.ends_with ~suffix:"buffered\n" response)
+
+let test_run_router_streaming_route () =
+  require_network ();
+  let body = String.make 5_000 'x' in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.post
+         ~request_body_mode:Camelio.Request_body_mode.Streaming "/streaming"
+         (fun _ req ->
+           let request_body = Camelio.Request.body req in
+           check bool "streaming" false (Camelio.Body.is_buffered request_body);
+           check
+             (result string (of_pp Camelio.Body.pp_error))
+             "body" (Ok body)
+             (Camelio.Body.to_string_limited ~max_size:5_000 request_body);
+           Camelio.Response.text "streaming\n")
+  in
+  let raw =
+    String.concat ""
+      [
+        "POST /streaming HTTP/1.1\r\n";
+        "Content-Length: ";
+        string_of_int (String.length body);
+        "\r\n";
+        "\r\n";
+        body;
+      ]
+  in
+  let response =
+    with_router_server ~max_request_body_size:5_000 router (request raw)
+  in
+  check bool
+    ("200 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "body" true (String.ends_with ~suffix:"streaming\n" response)
+
+let test_run_router_unmatched_body_too_large () =
+  require_network ();
+  let not_found_ran = ref false in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.not_found (fun _ ->
+        not_found_ran := true;
+        Camelio.Response.text ~status:Camelio.Status.not_found "missing\n")
+  in
+  let response =
+    with_router_server router
+      (request "POST /missing HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+  in
+  check bool "413" true
+    (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response);
+  check bool "not found not run" false !not_found_ran
+
+let test_run_router_does_not_preinvoke_route_handler () =
+  require_network ();
+  let handler_started = ref 0 in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.post
+         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
+         (fun _params ->
+           incr handler_started;
+           fun req ->
+             check
+               (result string (of_pp Camelio.Body.pp_error))
+               "body" (Ok "ping")
+               (Camelio.Body.to_string_limited ~max_size:4
+                  (Camelio.Request.body req));
+             Camelio.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router
+      (request "POST /upload HTTP/1.1\r\nContent-Length: 4\r\n\r\nping")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check int "handler invoked once" 1 !handler_started
+
 let multipart_request ~boundary body =
   String.concat ""
     [
@@ -380,6 +548,71 @@ let test_run_streaming_multipart_malformed_body () =
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
   check bool "handler ran" true !handler_ran
 
+let test_run_router_streaming_multipart_upload () =
+  require_network ();
+  let boundary = "AaB03x" in
+  let file_body = String.make 6_000 'r' in
+  let body =
+    String.concat ""
+      [
+        "--AaB03x\r\n";
+        "Content-Disposition: form-data; name=\"file\"; \
+         filename=\"router.bin\"\r\n";
+        "Content-Type: application/octet-stream\r\n";
+        "\r\n";
+        file_body;
+        "\r\n";
+        "--AaB03x--\r\n";
+      ]
+  in
+  let router =
+    Camelio.Router.empty
+    |> Camelio.Router.get "/health" (fun _ req ->
+        check bool "health body is buffered" true
+          (Camelio.Body.is_buffered (Camelio.Request.body req));
+        Camelio.Response.text "ok\n")
+    |> Camelio.Router.post
+         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
+         (fun _ req ->
+           check bool "request body is streaming" false
+             (Camelio.Body.is_buffered (Camelio.Request.body req));
+           let file_bytes = ref None in
+           match
+             Camelio.Multipart.Streaming.iter_request req
+               ~on_part:(fun part source ->
+                 match Camelio.Multipart.Streaming.filename part with
+                 | Some "router.bin" ->
+                     file_bytes :=
+                       Some (String.length (Eio.Flow.read_all source))
+                 | _ ->
+                     Eio.Flow.copy source
+                       (Eio.Flow.buffer_sink (Buffer.create 0)))
+           with
+           | Error error ->
+               Camelio.Response.text ~status:Camelio.Status.bad_request
+                 (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+           | Ok () ->
+               check (option int) "file bytes"
+                 (Some (String.length file_body))
+                 !file_bytes;
+               Camelio.Response.text "uploaded\n")
+  in
+  let health =
+    with_router_server ~max_request_body_size:(String.length body) router
+      (request "GET /health HTTP/1.1\r\n\r\n")
+  in
+  check bool "health 200" true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" health);
+  let upload =
+    with_router_server ~max_request_body_size:(String.length body) router
+      (request (multipart_request ~boundary body))
+  in
+  check bool
+    ("upload 200 response: " ^ upload)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" upload);
+  check bool "upload body" true (String.ends_with ~suffix:"uploaded\n" upload)
+
 let test_run_handler_exception () =
   require_network ();
   let response =
@@ -395,6 +628,10 @@ let () =
         [
           test_case "create applies middleware" `Quick
             test_create_applies_middleware;
+          test_case "create router applies middleware" `Quick
+            test_create_router_applies_middleware;
+          test_case "create router handle uses existing request body" `Quick
+            test_create_router_handle_uses_existing_request_body;
           test_case "default max body size" `Quick
             test_default_max_request_body_size;
           test_case "run success" `Quick test_run_success;
@@ -417,10 +654,20 @@ let () =
             test_run_streaming_payload_too_large;
           test_case "run streaming unsupported transfer encoding" `Quick
             test_run_streaming_unsupported_transfer_encoding;
+          test_case "run router buffered route" `Quick
+            test_run_router_buffered_route;
+          test_case "run router streaming route" `Quick
+            test_run_router_streaming_route;
+          test_case "run router unmatched body too large" `Quick
+            test_run_router_unmatched_body_too_large;
+          test_case "run router does not preinvoke route handler" `Quick
+            test_run_router_does_not_preinvoke_route_handler;
           test_case "run streaming multipart upload" `Quick
             test_run_streaming_multipart_upload;
           test_case "run streaming multipart malformed body" `Quick
             test_run_streaming_multipart_malformed_body;
+          test_case "run router streaming multipart upload" `Quick
+            test_run_router_streaming_multipart_upload;
           test_case "run handler exception" `Quick test_run_handler_exception;
         ] );
     ]

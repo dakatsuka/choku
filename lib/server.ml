@@ -1,10 +1,10 @@
 [@@@alert "-internal"]
 
-type request_body_mode = Buffered | Streaming
+type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
 type t = {
   max_request_body_size : int;
-  request_body_mode : request_body_mode;
+  request_body_mode : Http1.request_head -> request_body_mode;
   handler : Handler.t;
 }
 
@@ -15,8 +15,26 @@ let create ?(max_request_body_size = default_max_request_body_size)
   if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
   {
     max_request_body_size;
-    request_body_mode;
+    request_body_mode = (fun _head -> request_body_mode);
     handler = Middleware.apply middlewares handler;
+  }
+
+let create_router ?(max_request_body_size = default_max_request_body_size)
+    ?(middlewares = []) router =
+  if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
+  let router_handler = Router.to_handler router in
+  let request_body_mode head =
+    match
+      Router.Internal.match_route ~meth:head.Http1.meth ~target:head.target
+        router
+    with
+    | None -> Buffered
+    | Some route -> route.request_body_mode
+  in
+  {
+    max_request_body_size;
+    request_body_mode;
+    handler = Middleware.apply middlewares router_handler;
   }
 
 let max_request_body_size t = t.max_request_body_size
@@ -158,24 +176,22 @@ let streaming_request_of_head ~max_request_body_size flow head buffered_body =
         let body = Body.Internal.streaming ~content_length source in
         request_of_head_body head body
 
-let read_buffered_request max_request_body_size flow =
+let read_request t flow =
   match read_request_head flow with
   | Error error -> Error error
   | Ok { buffered_body; head } -> (
-      match read_fixed_body ~max_request_body_size flow head buffered_body with
-      | Error error -> Error error
-      | Ok body -> request_of_head head body)
-
-let read_streaming_request max_request_body_size flow =
-  match read_request_head flow with
-  | Error error -> Error error
-  | Ok { buffered_body; head } ->
-      streaming_request_of_head ~max_request_body_size flow head buffered_body
-
-let read_request t flow =
-  match t.request_body_mode with
-  | Buffered -> read_buffered_request t.max_request_body_size flow
-  | Streaming -> read_streaming_request t.max_request_body_size flow
+      match t.request_body_mode head with
+      | Buffered -> (
+          match
+            read_fixed_body ~max_request_body_size:t.max_request_body_size flow
+              head buffered_body
+          with
+          | Error error -> Error error
+          | Ok body -> request_of_head head body)
+      | Streaming ->
+          streaming_request_of_head
+            ~max_request_body_size:t.max_request_body_size flow head
+            buffered_body)
 
 let write_response flow response =
   Eio.Flow.copy_string (Http1.serialize_response response) flow

@@ -46,10 +46,10 @@ without making routing mandatory for the server.
   `/users/` and `/users//posts` are rejected during registration.
 - Route parameters are exposed through `Router.Params.t`, not by mutating or
   extending `Request.t`.
-- A later route-level body mode milestone may allow routes to opt into
-  streaming request bodies before the server reads the body. That feature must
-  preserve current `Router.to_handler` behavior for tests and server-wide body
-  mode users.
+- Routes may opt into streaming request bodies before the server reads the body
+  when the application uses `Server.create_router`. `Router.to_handler`
+  behavior remains useful for tests and server-wide body mode users with
+  already-constructed requests.
 - Missing routes return a configurable not-found handler, defaulting to `404 Not
   Found` with a text body.
 - Invalid route patterns raise `Invalid_argument` during route registration.
@@ -74,22 +74,30 @@ module Router : sig
 
   val empty : t
   val not_found : Handler.t -> t -> t
-  val route : Method.t -> string -> route_handler -> t -> t
-  val get : string -> route_handler -> t -> t
-  val post : string -> route_handler -> t -> t
-  val put : string -> route_handler -> t -> t
-  val patch : string -> route_handler -> t -> t
-  val delete : string -> route_handler -> t -> t
-  val options : string -> route_handler -> t -> t
+  type body_mode = Request_body_mode.t
+
+  val route :
+    ?request_body_mode:body_mode ->
+    Method.t ->
+    string ->
+    route_handler ->
+    t ->
+    t
+
+  val get : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val post : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val put : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val patch : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val delete :
+    ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val options :
+    ?request_body_mode:body_mode -> string -> route_handler -> t -> t
   val to_handler : t -> Handler.t
 end
 ```
 
-Future route-level body-mode extension is specified in
-[Route-Level Body Mode](../design-docs/route-level-body-mode.md). The expected
-extension adds optional `?request_body_mode` arguments to route registration and
-a server entry point that accepts `Router.t` directly, while preserving this
-baseline `Router.to_handler` contract.
+Route-level body-mode selection is specified in
+[Route-Level Body Mode](../design-docs/route-level-body-mode.md).
 
 Public `.mli` files must document these contracts with block comments.
 
@@ -112,7 +120,7 @@ let server =
     ()
 ```
 
-Future route-level streaming body mode:
+Route-level streaming body mode:
 
 ```ocaml
 let router =
@@ -134,5 +142,5 @@ let server = Camelio.Server.create_router router
   URI module?
 - Should a later router milestone support trailing-slash routes or repeated
   slash semantics?
-- Should route-level body mode be exposed only through `Server.create_router`,
-  or should a generic pre-body selector API also be public?
+- Should a later milestone add a generic pre-body selector API in addition to
+  the router-specific `Server.create_router` entry point?

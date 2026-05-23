@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Implemented
 
 ## Context
 
@@ -32,13 +32,12 @@ HTTP/1.1 request head must be matched before body reading begins.
 
 ## Non-Goals
 
-- Implementing the feature in this design pass.
 - Per-route middleware, route groups, mounts, filters, or 405 handling.
 - Body-mode selection based on headers, query strings, or request body content.
 - Changing `Handler.t`.
 - Making streaming request bodies replayable.
 
-## Proposed Design
+## Design
 
 Move the shared body-mode type into a server-independent module, while keeping
 the current `Server` constructors available for compatibility:
@@ -243,7 +242,7 @@ and included in the validation plan. Re-review found no remaining blockers.
 
 ## Validation
 
-Future implementation should add tests for:
+Implementation includes tests for:
 
 - `Router.to_handler` remains backward-compatible and buffered-mode agnostic.
 - `Server.create_router` uses buffered bodies for routes without explicit mode.
@@ -267,9 +266,5 @@ streaming multipart upload route.
 
 ## Open Questions
 
-- Should `Server.create_router` accept a fallback server-wide mode for unmatched
-  routes, or should unmatched always stay buffered?
 - Should a later generic selector API be added for users who do not want
   `Router.t` but still need pre-body body-mode selection?
-- Should route-level body mode wait for route introspection or be implemented
-  independently?

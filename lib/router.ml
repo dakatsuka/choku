@@ -15,11 +15,13 @@ end
 type segment = Static of string | Param of string
 type pattern = Root | Segments of segment list
 type route_handler = Params.t -> Request.t -> Response.t
+type body_mode = Request_body_mode.t
 
 type route_entry = {
   meth : Method.t;
   source : string;
   pattern : pattern;
+  request_body_mode : body_mode;
   handler : route_handler;
 }
 
@@ -71,17 +73,29 @@ let compile_pattern pattern =
     in
     Segments (List.rev segments)
 
-let route meth source handler router =
+let route ?(request_body_mode = Request_body_mode.Buffered) meth source handler
+    router =
   let pattern = compile_pattern source in
-  let entry = { meth; source; pattern; handler } in
+  let entry = { meth; source; pattern; request_body_mode; handler } in
   { router with routes = router.routes @ [ entry ] }
 
-let get pattern handler router = route Method.GET pattern handler router
-let post pattern handler router = route Method.POST pattern handler router
-let put pattern handler router = route Method.PUT pattern handler router
-let patch pattern handler router = route Method.PATCH pattern handler router
-let delete pattern handler router = route Method.DELETE pattern handler router
-let options pattern handler router = route Method.OPTIONS pattern handler router
+let get ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.GET pattern handler router
+
+let post ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.POST pattern handler router
+
+let put ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.PUT pattern handler router
+
+let patch ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.PATCH pattern handler router
+
+let delete ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.DELETE pattern handler router
+
+let options ?request_body_mode pattern handler router =
+  route ?request_body_mode Method.OPTIONS pattern handler router
 
 let path_segments path =
   if String.equal path "/" then Some []
@@ -107,15 +121,38 @@ let match_pattern pattern path =
       match_segments pattern_segments path_segments []
   | _ -> None
 
-let match_route request route =
+let path_of_target target =
+  match String.index_opt target '?' with
+  | None -> target
+  | Some index -> String.sub target 0 index
+
+let match_entry ~meth ~path route =
   let (_ : string) = route.source in
-  if Method.equal route.meth (Request.meth request) then
-    match match_pattern route.pattern (Request.path request) with
-    | Some params -> Some (route.handler params request)
+  if Method.equal route.meth meth then
+    match match_pattern route.pattern path with
+    | Some params -> Some (route, params)
     | None -> None
   else None
 
 let to_handler router request =
-  match List.find_map (match_route request) router.routes with
-  | Some response -> response
+  match
+    List.find_map
+      (match_entry ~meth:(Request.meth request) ~path:(Request.path request))
+      router.routes
+  with
+  | Some (route, params) -> route.handler params request
   | None -> router.not_found request
+
+module Internal = struct
+  type matched_route = { request_body_mode : Request_body_mode.t }
+
+  let match_route ~meth ~target router =
+    let path = path_of_target target in
+    router.routes
+    |> List.find_map (fun route ->
+        match match_entry ~meth ~path route with
+        | None -> None
+        | Some (route, params) ->
+            let (_ : Params.t) = params in
+            Some { request_body_mode = route.request_body_mode })
+end

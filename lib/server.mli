@@ -7,7 +7,7 @@ type t
     [Buffered] reads the full request body before invoking the handler and keeps
     it replayable. [Streaming] invokes the handler with a single-consumption
     body source capped to the request's declared [Content-Length]. *)
-type request_body_mode = Buffered | Streaming
+type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
 val create :
   ?max_request_body_size:int ->
@@ -23,12 +23,26 @@ val create :
     applied with [Middleware.apply] exactly once. [request_body_mode] defaults
     to [Buffered]. *)
 
+val create_router :
+  ?max_request_body_size:int -> ?middlewares:Middleware.t list -> Router.t -> t
+(** [create_router ?max_request_body_size ?middlewares router] creates a server
+    from [router].
+
+    Route-level request body modes are selected after request-head parsing and
+    before request body delivery. Routes without an explicit body mode and
+    unmatched requests use [Buffered]. [middlewares] wrap the final router
+    handler exactly once and cannot affect body-mode selection. *)
+
 val max_request_body_size : t -> int
 (** [max_request_body_size t] returns the configured body limit. *)
 
 val handle : t -> Request.t -> Response.t
 (** [handle t request] invokes the composed handler. This is primarily useful
-    for tests and protocol adapters. *)
+    for tests and protocol adapters.
+
+    For servers created with {!create_router}, [handle] invokes the router
+    handler with the already-built [request]; it does not perform route-level
+    body-mode selection because the body has already been constructed. *)
 
 val run :
   sw:Eio.Switch.t ->

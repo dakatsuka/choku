@@ -73,7 +73,7 @@ Server streaming is opt-in:
 
 ```ocaml
 module Server : sig
-  type request_body_mode = Buffered | Streaming
+  type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
   val create :
     ?max_request_body_size:int ->
@@ -82,6 +82,12 @@ module Server : sig
     handler:Handler.t ->
     unit ->
     t
+
+  val create_router :
+    ?max_request_body_size:int ->
+    ?middlewares:Middleware.t list ->
+    Router.t ->
+    t
 end
 ```
 
@@ -89,6 +95,11 @@ end
 validates `Content-Length` before handler invocation, rejects declared
 over-limit bodies before invoking the handler, and passes a single-consumption
 body source capped to the declared length.
+
+`Server.create_router` additionally lets individual routes opt into streaming
+with `Router.post ~request_body_mode:Request_body_mode.Streaming` and the other
+route registration helpers. Routes without an explicit body mode remain
+buffered.
 
 The server should invoke handlers before fully reading streaming bodies. The
 request body source remains valid only while the handler is running. If the

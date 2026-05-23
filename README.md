@@ -79,6 +79,33 @@ let server =
   Camelio.Server.create ~handler:(Camelio.Router.to_handler router) ()
 ```
 
+For router-backed servers, individual routes can opt into streaming request
+bodies while other routes stay buffered:
+
+```ocaml
+let upload params request =
+  let user_id = Camelio.Router.Params.get "id" params in
+  match Camelio.Multipart.Streaming.iter_request request ~on_part:save_part with
+  | Ok () ->
+      Camelio.Response.text
+        (Printf.sprintf "uploaded for user %s\n"
+           (Option.value ~default:"unknown" user_id))
+  | Error error ->
+      Camelio.Response.text ~status:Camelio.Status.bad_request
+        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+
+let router =
+  Camelio.Router.empty
+  |> Camelio.Router.get "/health" (fun _params _request ->
+         Camelio.Response.text "ok\n")
+  |> Camelio.Router.post
+       ~request_body_mode:Camelio.Request_body_mode.Streaming
+       "/users/:id/avatar"
+       upload
+
+let server = Camelio.Server.create_router router
+```
+
 Parse buffered multipart forms for small uploads:
 
 ```ocaml
@@ -129,6 +156,10 @@ let server =
   Camelio.Server.create ~request_body_mode:Camelio.Server.Streaming
     ~handler:(upload_streaming ~upload_dir ~random) ()
 ```
+
+When using the router, prefer `Server.create_router` and set
+`~request_body_mode:Camelio.Request_body_mode.Streaming` only on upload routes.
+Routes without `~request_body_mode` keep the default buffered body behavior.
 
 The repository includes runnable examples:
 

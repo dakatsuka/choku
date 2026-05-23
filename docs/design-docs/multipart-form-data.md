@@ -221,5 +221,3 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
 
 - Should future helpers add a higher-level upload storage policy, or leave that
   entirely to applications?
-- Should multipart streaming add route-level body mode integration once server
-  routing policy exists?
