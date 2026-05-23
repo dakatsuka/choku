@@ -35,8 +35,12 @@ As an OCaml 5.4 developer using Eio, I want to run a small HTTP server with a
 plain OCaml request handler so that I can serve HTTP responses without adopting
 `cohttp`, `lwt`, or `async`.
 
-## Open Questions
+## Resolved Initial Questions
 
-- What should the first public handler signature be?
-- What HTTP/1.1 features define the first usable release?
-- What examples should be included in the first implementation milestone?
+- The first public handler signature is defined by
+  [Minimal Server API](minimal-server-api.md).
+- The first HTTP/1.1 feature scope is defined by
+  [Minimal HTTP/1.1 Server Milestone](minimal-http1-server.md).
+- The first example shape is captured by
+  [Minimal HTTP/1.1 Server Milestone](minimal-http1-server.md) and the active
+  implementation plan.

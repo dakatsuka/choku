@@ -1,0 +1,159 @@
+# Project Layout and Tooling
+
+## Status
+
+Draft
+
+## Context
+
+Camelio needs a small OCaml project structure before implementation starts. The
+repository currently contains design and product documentation only. The first
+implementation milestone should introduce build, test, formatting, and source
+layout together so later agents can follow a stable convention.
+
+## Goals
+
+- Use a conventional dune-based OCaml library layout.
+- Keep source modules small and aligned with public contracts.
+- Create unit tests per OCaml source file.
+- Use Alcotest for unit tests.
+- Use ocamlformat for formatting.
+- Avoid implementation files in this design step.
+
+## Non-Goals
+
+- Creating source, test, dune, opam, or formatter files in this design step.
+- Selecting release metadata beyond what the first implementation plan needs.
+- Adding benchmark, fuzzing, coverage, or CI infrastructure before the minimal
+  server exists.
+
+## Proposed Layout
+
+The first implementation plan should create this layout:
+
+```text
+lib/
+  camelio.ml
+  method.ml
+  method.mli
+  headers.ml
+  headers.mli
+  status.ml
+  status.mli
+  body.ml
+  body.mli
+  request.ml
+  request.mli
+  response.ml
+  response.mli
+  handler.ml
+  handler.mli
+  middleware.ml
+  middleware.mli
+  http1.ml
+  http1.mli
+  server.ml
+  server.mli
+
+test/
+  test_method.ml
+  test_headers.ml
+  test_status.ml
+  test_body.ml
+  test_request.ml
+  test_response.ml
+  test_handler.ml
+  test_middleware.ml
+  test_http1.ml
+  test_server.ml
+
+examples/
+  hello.ml
+```
+
+Each implementation module should have a corresponding `.mli` once it exposes a
+public contract. Public interfaces must use block comments for contracts and
+behavior.
+
+The public module shape is top-level under the `Camelio` library:
+`Camelio.Method`, `Camelio.Headers`, `Camelio.Status`, `Camelio.Body`,
+`Camelio.Request`, `Camelio.Response`, `Camelio.Handler`,
+`Camelio.Middleware`, `Camelio.Http1`, and `Camelio.Server`.
+
+## Tooling
+
+The first implementation plan should introduce:
+
+- `dune-project`;
+- `lib/dune`;
+- `test/dune`;
+- `examples/dune`;
+- `.ocamlformat`;
+- an opam package file when package metadata is needed for dependency
+  resolution.
+
+Initial dependencies:
+
+- runtime: `eio`, `eio_main`;
+- test: `alcotest`;
+- build: `dune`;
+- formatting: `ocamlformat`.
+
+The expected verification commands are:
+
+```sh
+dune build @all
+dune runtest
+dune fmt
+```
+
+If additional static analysis becomes available later, add it to the execution
+plan and fix findings before implementation review.
+
+## Test Organization
+
+Unit tests must be organized per module. For OCaml, each source file under test
+gets a corresponding unit test file:
+
+- `lib/headers.ml` -> `test/test_headers.ml`;
+- `lib/middleware.ml` -> `test/test_middleware.ml`;
+- `lib/http1.ml` -> `test/test_http1.ml`.
+
+Integration tests may share files when they test cross-module behavior such as
+`Server.run` with a real Eio listener.
+
+## Contracts
+
+Public `.mli` files should be created before or alongside implementations. The
+implementation plan should start by adding signatures and contract comments,
+then write failing tests against those signatures before filling in internals.
+
+## Alternatives Considered
+
+- `ppx_expect`: useful for parser snapshots, but Alcotest keeps the initial test
+  dependency set smaller and works well with module-level unit tests.
+- OUnit2: mature, but Alcotest has a compact API and good fit for small value
+  tests.
+- Single large `http.ml`: rejected because method, header, status, body, request,
+  and response behavior need independent contracts and per-module tests.
+
+## Third-Party Review
+
+Initial context-free sub-agent review found blocking issues around request body
+limit policy, HTTP parser error policy, public module shape, and execution-plan
+review status. This document was updated to make the public module shape
+explicit. Final context-free re-review reported no blocking findings and
+confirmed that the pre-implementation docs are consistent enough to stop before
+implementation.
+
+## Validation
+
+This design should be validated by reviewing whether the planned layout supports
+the minimal server API, per-module unit tests, contract-first implementation, and
+tool-driven formatting.
+
+## Open Questions
+
+- Should an opam package file be created in the first implementation step, or
+  after the first buildable library exists?
+- Which exact ocamlformat profile should be used?

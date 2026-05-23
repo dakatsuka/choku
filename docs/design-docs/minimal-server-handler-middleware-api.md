@@ -48,7 +48,9 @@ The first public server API should revolve around three concepts:
 - `Handler.t`: a function from request to response.
 
 `Request.t`, `Response.t`, `Method.t`, `Headers.t`, `Status.t`, and `Body.t`
-belong to the shared HTTP layer, not to the server layer. The first milestone
+belong to the shared HTTP value layer, not to the server layer. The first
+milestone exposes them as top-level modules under the `Camelio` library, such as
+`Camelio.Request` and `Camelio.Response`, for ergonomic use. The first milestone
 uses them from the server only, but their naming and contracts should avoid
 server-only assumptions so a future `Client` module can reuse them for reverse
 proxy and outbound HTTP use cases.
@@ -76,6 +78,7 @@ module Server : sig
   type t
 
   val create :
+    ?max_request_body_size:int ->
     ?middlewares:Middleware.t list ->
     handler:Handler.t ->
     unit ->
@@ -97,8 +100,11 @@ socket fails, or a future explicit shutdown API requests termination. The first
 implementation milestone does not need an explicit shutdown function; structured
 cancellation through the caller-owned switch is the shutdown mechanism.
 
-`Server.create ?middlewares ~handler ()` must compose `middlewares` exactly once
-using `Middleware.apply middlewares handler` and store the resulting handler.
+`Server.create ?max_request_body_size ?middlewares ~handler ()` must compose
+`middlewares` exactly once using `Middleware.apply middlewares handler` and store
+the resulting handler. `max_request_body_size` defaults to `1_048_576` bytes. A
+request whose declared or decoded body exceeds the configured limit is rejected
+before handler invocation.
 
 Application dependencies should normally be captured by closure:
 
@@ -165,7 +171,8 @@ connection state, or socket state.
 HTTP/2 and HTTP/3 are not part of the first server milestone, but the design
 should avoid unnecessary HTTP/1.1 coupling:
 
-- shared HTTP value types belong in `Camelio.Http`;
+- shared HTTP value types are exposed as top-level modules such as
+  `Camelio.Request` and `Camelio.Response`;
 - HTTP/1.1 parsing and encoding belong in `Camelio.Http1`;
 - future HTTP/2 framing, stream multiplexing, and flow control should belong in
   a version-specific module such as `Camelio.Http2`;
@@ -296,6 +303,7 @@ module Status : sig
   val ok : t
   val bad_request : t
   val not_found : t
+  val payload_too_large : t
   val internal_server_error : t
 end
 
@@ -333,10 +341,12 @@ end
 ```
 
 Request bodies are buffered and replayable in the first milestone. The server
-should enforce a configurable maximum request body size before constructing
-`Request.t`; the exact default belongs in the implementation plan. Streaming
-request and response bodies are deferred, but the abstract body type preserves a
-path for adding streaming constructors later.
+must enforce `Server.create`'s configurable maximum request body size before
+constructing `Request.t`. The default limit is `1_048_576` bytes. Over-limit
+requests do not invoke the handler; when possible, the server returns
+`413 Payload Too Large` with `connection: close` and then closes the connection.
+Streaming request and response bodies are deferred, but the abstract body type
+preserves a path for adding streaming constructors later.
 
 Test builders should use the same `make` functions so handler and middleware
 tests can run without sockets.
@@ -476,5 +486,5 @@ The implementation plan should validate this design with:
 - Should `Request.t` expose the body as a pull-based stream, an eager value, or a
   hybrid body abstraction after the first buffered-body milestone?
 - Should `Response.t` add streaming after the first implementation milestone?
-- Should shutdown be cancellation-only at first, or should `Server.t` expose an
-  explicit shutdown function?
+- Should a later milestone add an explicit shutdown API beyond caller-owned
+  switch cancellation?

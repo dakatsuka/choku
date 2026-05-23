@@ -49,6 +49,11 @@ Eio-native HTTP server before higher-level routing DSLs exist.
   request and response values.
 - First-milestone request bodies are buffered and replayable. Streaming bodies
   are deferred behind abstract body types.
+- The default maximum request body size is `1_048_576` bytes and can be
+  overridden with `Server.create ?max_request_body_size`.
+- Over-limit request bodies do not invoke the handler and produce
+  `413 Payload Too Large` with `connection: close` when a response can still be
+  written.
 - Uncaught non-cancellation handler exceptions before response writing produce a
   `500 Internal Server Error` response with `content-type:
   text/plain; charset=utf-8`, `connection: close`, and body
@@ -139,7 +144,6 @@ let upstream_request =
 
 ## Open Questions
 
-- What default maximum request body size should the server enforce?
 - Which request-target constructors should be added when HTTP Client support is
   designed?
 - Which TLS library or abstraction should be used by future client/server

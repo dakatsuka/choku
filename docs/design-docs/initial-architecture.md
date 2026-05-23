@@ -39,7 +39,12 @@ runtimes such as `lwt` or `async`.
 - `Camelio.Client`: future HTTP client API built on shared HTTP types.
 - `Camelio.Handler`: low-level request-to-response handler contract.
 - `Camelio.Middleware`: handler-to-handler transformations.
-- `Camelio.Http`: request, response, method, header, status, and body types.
+- `Camelio.Method`: HTTP method values.
+- `Camelio.Headers`: HTTP header values.
+- `Camelio.Status`: HTTP status values.
+- `Camelio.Body`: buffered body values, with room for future streaming.
+- `Camelio.Request`: HTTP request values.
+- `Camelio.Response`: HTTP response values.
 - `Camelio.Http1`: HTTP/1 parser and encoder.
 - `Camelio.Http2`: future HTTP/2 framing and stream handling.
 - `Camelio.Http3`: future HTTP/3 transport integration and stream handling.
@@ -50,14 +55,16 @@ runtimes such as `lwt` or `async`.
 These names are provisional until the first implementation plan confirms package
 layout and build tooling.
 
-`Camelio.Http` should contain protocol value types that are useful to both the
-server and the future client. Server-specific lifecycle concerns belong in
-`Camelio.Server`; future client connection pooling, redirect policy, and TLS
+`Camelio.Method`, `Camelio.Headers`, `Camelio.Status`, `Camelio.Body`,
+`Camelio.Request`, and `Camelio.Response` form the shared HTTP value layer. They
+are exposed as top-level modules for ergonomic use, and should stay useful to
+both the server and the future client. Server-specific lifecycle concerns belong
+in `Camelio.Server`; future client connection pooling, redirect policy, and TLS
 configuration should belong in `Camelio.Client`.
 
 HTTP version-specific parsing, framing, stream multiplexing, flow control, and
-transport integration should stay outside the shared `Camelio.Http` value layer.
-HTTP/1.1 belongs in `Camelio.Http1`. Future HTTP/2 and HTTP/3 support should add
+transport integration should stay outside the shared HTTP value layer. HTTP/1.1
+belongs in `Camelio.Http1`. Future HTTP/2 and HTTP/3 support should add
 version-specific modules that translate between protocol frames/streams and the
 shared request/response values where that mapping is valid.
 
@@ -79,11 +86,7 @@ The initial implementation plan should introduce:
 
 ## Open Questions
 
-- Which test framework should be used?
-- What is the minimum supported HTTP/1.1 feature set for the first release?
 - Should the first parser be handwritten or built with a parser combinator?
-- Should request and response body abstractions be eager, streaming, or hybrid in
-  the first implementation milestone?
 - What transport abstraction should a future HTTP client use for plain TCP and
   TLS without forcing TLS into the first server milestone?
 - Which shared abstractions need to change before HTTP/2 multiplexing or HTTP/3
