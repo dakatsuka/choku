@@ -10,4 +10,4 @@
   test_middleware
   test_http1
   test_server)
- (libraries camelio alcotest eio eio_main))
+ (libraries camelio alcotest eio eio_main unix))

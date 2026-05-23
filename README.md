@@ -1,5 +1,7 @@
 # Camelio
 
+[![CI](https://github.com/dakatsuka/camelio/actions/workflows/ci.yml/badge.svg)](https://github.com/dakatsuka/camelio/actions/workflows/ci.yml)
+
 Camelio is an OCaml 5.4 HTTP server project built around Eio-native direct-style
 IO.
 
@@ -23,7 +25,17 @@ Expected local checks:
 ```sh
 dune build @all
 dune runtest
-dune fmt
+dune build @fmt
+dune build @check
+dune build @install
+opam lint camelio.opam
+```
+
+Network integration tests are disabled by default in local sandboxed
+environments. Run them explicitly when sockets are available:
+
+```sh
+CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 ```
 
 The project uses:

@@ -27,7 +27,17 @@ let with_server handler f =
   Eio_main.run @@ fun env ->
   let net = Eio.Stdenv.net env in
   let clock = Eio.Stdenv.clock env in
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 18_080) in
+  let port =
+    let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close socket)
+      (fun () ->
+        Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
+        match Unix.getsockname socket with
+        | Unix.ADDR_INET (_, port) -> port
+        | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
+  in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let server = Camelio.Server.create ~max_request_body_size:4 ~handler () in
   let response = ref None in
   (try

@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: OCaml ${{ matrix.ocaml-compiler }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 5.4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          dune-cache: true
+
+      - name: Install dependencies
+        run: opam install . --deps-only --with-test --with-dev-setup -y
+
+      - name: Build
+        run: opam exec -- dune build @all
+
+      - name: Test
+        run: opam exec -- dune runtest
+
+      - name: Loopback integration tests
+        run: opam exec -- env CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+
+      - name: Format check
+        run: opam exec -- dune build @fmt
+
+      - name: Dune check
+        run: opam exec -- dune build @check
+
+      - name: Install check
+        run: opam exec -- dune build @install
+
+      - name: opam lint
+        run: opam lint camelio.opam

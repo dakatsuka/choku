@@ -89,6 +89,7 @@ The first implementation plan should introduce:
 - `test/dune`;
 - `examples/dune`;
 - `.ocamlformat`;
+- `.github/workflows/ci.yml`;
 - `camelio.opam`, generated from `dune-project`.
 
 Initial dependencies:
@@ -106,11 +107,34 @@ The expected verification commands are:
 ```sh
 dune build @all
 dune runtest
-dune fmt
+dune build @fmt
+dune build @check
+dune build @install
+opam lint camelio.opam
 ```
 
 If additional static analysis becomes available later, add it to the execution
 plan and fix findings before implementation review.
+
+## CI
+
+GitHub Actions should use `ocaml/setup-ocaml@v3` with OCaml 5.4 on
+`ubuntu-latest`. The workflow should install dependencies with test and
+development setup dependencies, then run the local checks plus CI-only network
+integration tests:
+
+```sh
+opam exec -- dune build @all
+opam exec -- dune runtest
+opam exec -- env CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+opam exec -- dune build @fmt
+opam exec -- dune build @check
+opam exec -- dune build @install
+opam lint camelio.opam
+```
+
+Loopback integration tests are gated locally because sandboxed environments may
+forbid socket creation. They should run in CI.
 
 ## Test Organization
 
