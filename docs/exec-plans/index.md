@@ -7,6 +7,15 @@ Execution plans are first-class development artifacts for substantial work.
 - `active/`: plans currently being implemented.
 - `completed/`: finished plans with final notes and verification results.
 
+## Active Plans
+
+- [Implement Minimal Router DSL](active/0003-implement-minimal-router-dsl.md)
+
+## Completed Plans
+
+- [Bootstrap Project Harness](completed/0001-bootstrap-project-harness.md)
+- [Implement Minimal HTTP/1.1 Server](completed/0002-implement-minimal-http1-server.md)
+
 ## When To Create A Plan
 
 Create an execution plan when work spans multiple files, introduces a subsystem,

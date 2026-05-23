@@ -2,7 +2,7 @@
 
 ## Status
 
-Active
+Completed
 
 ## Objective
 
@@ -82,7 +82,7 @@ Verified commands:
 ```sh
 dune build @all
 dune runtest
-dune fmt
+dune build @fmt
 dune build @check
 dune build @install
 opam lint camelio.opam
