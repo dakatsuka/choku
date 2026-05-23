@@ -23,6 +23,7 @@ Eio-native HTTP server before higher-level routing DSLs exist.
 - Regex path matching.
 - HTTP client APIs.
 - TLS support.
+- HTTP/2 or HTTP/3 support.
 - Web framework features such as controllers, templates, sessions, or dependency
   injection.
 
@@ -43,6 +44,9 @@ Eio-native HTTP server before higher-level routing DSLs exist.
 - A future Router DSL must be able to compile to the same handler contract.
 - A future HTTP client must be able to reuse shared HTTP types for methods,
   headers, status, request bodies, and response bodies.
+- Future HTTP/2 and HTTP/3 implementations must be able to reuse the handler and
+  middleware contract when their protocol semantics can be represented as shared
+  request and response values.
 - First-milestone request bodies are buffered and replayable. Streaming bodies
   are deferred behind abstract body types.
 - Uncaught non-cancellation handler exceptions before response writing produce a
@@ -86,6 +90,11 @@ The first milestone supports plain HTTP server connections only. It must not
 promise HTTPS or TLS behavior, but protocol code should be designed around Eio
 flows so future TLS transport support can be introduced without changing handler
 contracts.
+
+The first milestone supports HTTP/1.1 only. It must not promise HTTP/2 or HTTP/3
+behavior, but the handler and middleware APIs should avoid depending on HTTP/1.1
+connection details so later protocol versions can target the same shared
+request/response contract where appropriate.
 
 ## Examples
 
@@ -135,5 +144,7 @@ let upstream_request =
   designed?
 - Which TLS library or abstraction should be used by future client/server
   transport support?
+- What body, trailer, multiplexing, and lifecycle abstractions are needed before
+  HTTP/2 or HTTP/3 can be designed?
 - Should middleware order ever support alternate composition helpers beyond
   explicit list order?

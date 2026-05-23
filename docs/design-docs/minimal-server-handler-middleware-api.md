@@ -36,7 +36,8 @@ concepts in the core handler contract.
 - Providing a web framework, controller layer, template layer, or application
   container.
 - Copying Go's mutable `ResponseWriter` model as the primary API.
-- Designing HTTP/2, HTTP/3, TLS, compression, or observability integrations.
+- Implementing HTTP/2 or HTTP/3 in the first server milestone.
+- Designing TLS, compression, or observability integrations.
 
 ## Proposed Design
 
@@ -153,6 +154,30 @@ The future client will likely need TLS earlier than the server because many
 outbound URLs use `https`. That requirement should be handled in a separate
 client/TLS design and ADR before implementation. Until then, no public API
 should promise HTTPS support.
+
+## Protocol Version Compatibility
+
+The first milestone should implement HTTP/1.1 only. The public handler and
+middleware contracts should remain protocol-neutral: handlers operate on shared
+`Request.t` and `Response.t` values rather than HTTP/1.1 parser state,
+connection state, or socket state.
+
+HTTP/2 and HTTP/3 are not part of the first server milestone, but the design
+should avoid unnecessary HTTP/1.1 coupling:
+
+- shared HTTP value types belong in `Camelio.Http`;
+- HTTP/1.1 parsing and encoding belong in `Camelio.Http1`;
+- future HTTP/2 framing, stream multiplexing, and flow control should belong in
+  a version-specific module such as `Camelio.Http2`;
+- future HTTP/3 support should be designed separately because it combines HTTP
+  semantics with QUIC transport concerns;
+- middleware should not depend on connection-level details that differ across
+  HTTP versions.
+
+Some HTTP/2 and HTTP/3 features, especially multiplexing, streaming bodies,
+trailers, and flow control, may require widening body and server lifecycle
+abstractions. Those changes should be handled in a later design doc and ADR
+before implementation.
 
 ## Middleware Semantics
 
@@ -424,6 +449,12 @@ notes reported no blocking findings. The review confirmed that the initial
 milestone remains server-only, shared HTTP value types are positioned for future
 client reuse, TLS is deferred, and no public HTTPS support is promised.
 
+Additional context-free review of HTTP/2 and HTTP/3 compatibility notes reported
+no blocking findings. The review confirmed that the first milestone remains
+HTTP/1.1 only, handler and middleware contracts stay protocol-neutral, shared
+HTTP values remain outside `Http1`, and future version-specific modules own
+framing, multiplexing, and transport concerns.
+
 ## Validation
 
 The implementation plan should validate this design with:
@@ -440,6 +471,8 @@ The implementation plan should validate this design with:
 - Which shared HTTP type contracts will need widening when the HTTP client is
   designed?
 - What transport abstraction should future TLS support use?
+- Which handler, body, and lifecycle abstractions must widen before HTTP/2 or
+  HTTP/3 support?
 - Should `Request.t` expose the body as a pull-based stream, an eager value, or a
   hybrid body abstraction after the first buffered-body milestone?
 - Should `Response.t` add streaming after the first implementation milestone?
