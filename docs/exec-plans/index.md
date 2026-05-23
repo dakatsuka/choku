@@ -9,12 +9,14 @@ Execution plans are first-class development artifacts for substantial work.
 
 ## Active Plans
 
-- [Implement Minimal Router DSL](active/0003-implement-minimal-router-dsl.md)
+None.
 
 ## Completed Plans
 
 - [Bootstrap Project Harness](completed/0001-bootstrap-project-harness.md)
 - [Implement Minimal HTTP/1.1 Server](completed/0002-implement-minimal-http1-server.md)
+- [Implement Minimal Router DSL](completed/0003-implement-minimal-router-dsl.md)
+- [Implement URL-Encoded Form Support](completed/0004-implement-form-urlencoded.md)
 
 ## When To Create A Plan
 

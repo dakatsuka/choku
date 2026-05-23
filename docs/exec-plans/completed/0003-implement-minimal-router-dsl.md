@@ -2,7 +2,7 @@
 
 ## Status
 
-Active
+Completed
 
 ## Objective
 
@@ -48,15 +48,15 @@ defined.
 - [x] Explore: inspect existing code, specs, design docs, and tests.
 - [x] Design review: request context-free third-party review and incorporate
       feedback.
-- [ ] Red: write failing behavior-focused tests in `test/test_router.ml`.
-- [ ] Green: implement the smallest `lib/router.ml` that satisfies the tests.
-- [ ] Refactor: improve route pattern parsing and matching while keeping tests
+- [x] Red: write failing behavior-focused tests in `test/test_router.ml`.
+- [x] Green: implement the smallest `lib/router.ml` that satisfies the tests.
+- [x] Refactor: improve route pattern parsing and matching while keeping tests
       green.
-- [ ] Static checks: run formatters and static analysis tools, then fix
+- [x] Static checks: run formatters and static analysis tools, then fix
       findings.
-- [ ] Code review: request context-free third-party review after
+- [x] Code review: request context-free third-party review after
       implementation.
-- [ ] Re-review: fix review findings and repeat review until it passes.
+- [x] Re-review: fix review findings and repeat review until it passes.
 
 ## Decisions
 
@@ -71,7 +71,7 @@ defined.
 
 ## Verification
 
-Expected commands:
+Verified commands:
 
 ```sh
 dune build @all
@@ -87,8 +87,14 @@ testable through `Router.to_handler` without sockets.
 
 ## Completion Notes
 
-Pending implementation.
+Implemented `Camelio.Router` with immutable route registration, first-match
+method/path routing, static and named-parameter path patterns, configurable
+not-found handling, and `Router.to_handler`. Context-free code review reported
+no blocking findings; low-severity feedback about keeping the source pattern and
+testing the generic `Router.route` API was addressed.
 
 ## Commit
 
-Pending implementation.
+```text
+feat: implement minimal router DSL
+```

@@ -6,8 +6,10 @@
   test_body
   test_request
   test_response
+  test_form
   test_handler
   test_middleware
+  test_router
   test_http1
   test_server)
  (libraries camelio alcotest eio eio_main unix))

@@ -9,6 +9,7 @@ This directory is the source of truth for Camelio's technical design.
 - [Minimal Router DSL](minimal-router-dsl.md)
 - [Minimal Server, Handler, and Middleware API](minimal-server-handler-middleware-api.md)
 - [Project Layout and Tooling](project-layout-and-tooling.md)
+- [URL-Encoded Form Support](form-urlencoded.md)
 - [ADR Index](adr/index.md)
 
 ## When To Add Or Update A Design Doc
