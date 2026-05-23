@@ -32,10 +32,27 @@ What outcome should exist when this plan is complete?
 
 Which specs, design docs, ADRs, and references govern this work?
 
+## Clarifications
+
+List questions asked before implementation and the answers that removed
+ambiguity. Do not proceed on unclear instructions by guessing.
+
+## Contract First
+
+List public APIs, function signatures, types, and contract comments to create
+before internal implementation.
+
 ## Steps
 
-- [ ] Step one.
-- [ ] Step two.
+- [ ] Explore: inspect existing code, specs, design docs, and tests.
+- [ ] Design review: request context-free third-party review and incorporate
+      feedback.
+- [ ] Red: write failing behavior-focused tests.
+- [ ] Green: implement the smallest change that satisfies the tests.
+- [ ] Refactor: improve structure while keeping tests green.
+- [ ] Static checks: run formatters and static analysis tools, then fix findings.
+- [ ] Code review: request context-free third-party review after implementation.
+- [ ] Re-review: fix review findings and repeat review until it passes.
 
 ## Decisions
 
@@ -43,7 +60,8 @@ Record implementation decisions made during the work.
 
 ## Verification
 
-List commands, tests, examples, or manual checks.
+List test commands, static analysis commands, format commands, examples, or
+manual checks.
 
 ## Completion Notes
 

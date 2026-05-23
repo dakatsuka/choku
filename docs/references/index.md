@@ -5,6 +5,7 @@ repository.
 
 ## Current References
 
+- [Agentic Development Rules](agentic-development-rules.md)
 - [Harness Engineering Notes](harness-engineering-notes.md)
 
 ## Reference Policy

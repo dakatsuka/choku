@@ -33,8 +33,24 @@ Start with the relevant index before making changes:
 - Do not depend on `cohttp`, `lwt`, or `async`.
 - Prefer small, explicit modules with behavior documented by tests.
 - Keep public APIs narrow until requirements are captured in a product spec.
+- Define public APIs, function signatures, and types before filling in internal
+  implementation details.
+- Document public interfaces and contracts with block comments.
+- Keep modules, classes, functions, and values focused on the smallest practical
+  responsibility.
+- Prefer names and structure that future maintainers and agentic AI can follow
+  during operations and incident analysis.
 - Write repository documentation, source comments, commit messages, and public
   technical artifacts in English.
+
+## Collaboration Rules
+
+- If instructions are unclear, ask clarifying questions before making
+  assumptions.
+- After design work, ask a context-free sub-agent for third-party review. Reflect
+  feedback before implementation begins.
+- After implementation, ask a context-free sub-agent for code review. Fix any
+  findings and repeat review until the review passes.
 
 ## Documentation Workflow
 
@@ -51,6 +67,10 @@ Start with the relevant index before making changes:
 
 ## Quality Bar
 
+- Use an Explore -> Red -> Green -> Refactor cycle for implementation work.
+- Use available static analysis and formatting tools for the language and fix
+  their findings. Do not use prompts or manual AI edits as a substitute for
+  tool-driven formatting or static checks.
 - Before finishing implementation work, run the most specific available test
   command and record the result in the final response.
 - If no test harness exists yet, state that explicitly and prefer adding one as

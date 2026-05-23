@@ -44,11 +44,17 @@ What is explicitly out of scope?
 
 Specific behavior, compatibility, and error handling requirements.
 
+## Public Contracts
+
+User-visible APIs, function signatures, types, and invariants that design and
+implementation must preserve.
+
 ## Examples
 
 Representative usage or protocol examples.
 
 ## Open Questions
 
-Unresolved product decisions.
+Unresolved product decisions. Ask clarifying questions instead of proceeding by
+assumption when these affect implementation.
 ```

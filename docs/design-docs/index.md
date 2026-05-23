@@ -46,9 +46,20 @@ What is intentionally out of scope?
 
 Describe the architecture, interfaces, and important behaviors.
 
+## Contracts
+
+List public APIs, function signatures, types, and invariants that must be stable
+enough to implement against. Public contracts must be documented with block
+comments in source files.
+
 ## Alternatives Considered
 
 List credible alternatives and why they were not chosen.
+
+## Third-Party Review
+
+Record feedback from a context-free sub-agent review and how the design changed
+before implementation.
 
 ## Validation
 
