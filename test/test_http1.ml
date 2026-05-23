@@ -99,6 +99,12 @@ let test_reject_malformed_header_names () =
         "error" Camelio.Http1.Malformed_header (parse_error raw))
     cases
 
+let test_reject_request_target_controls () =
+  check
+    (module Camelio.Http1.Error)
+    "error" Camelio.Http1.Unsupported_request_target
+    (parse_error "GET /bad\tpath HTTP/1.1\r\n\r\n")
+
 let test_reject_over_limit_body () =
   check
     (module Camelio.Http1.Error)
@@ -141,6 +147,8 @@ let () =
             test_allow_identical_content_length;
           test_case "reject malformed header names" `Quick
             test_reject_malformed_header_names;
+          test_case "reject request target controls" `Quick
+            test_reject_request_target_controls;
           test_case "reject over limit body" `Quick test_reject_over_limit_body;
           test_case "serialize response" `Quick test_serialize_response;
         ] );

@@ -124,6 +124,10 @@ let content_length headers =
           in
           if same then Ok length else Error Invalid_content_length)
 
+let make_request ~meth ~target ~headers ~body =
+  try Request.make ~meth ~target ~headers ~body |> Result.ok
+  with Invalid_argument _ -> Error Unsupported_request_target
+
 let parse_request_string
     ?(max_request_body_size = default_max_request_body_size) raw =
   match find_header_end raw with
@@ -137,7 +141,7 @@ let parse_request_string
           let available_body = String.length raw - body_start |> max 0 in
           match content_length headers with
           | Error error -> Error error
-          | Ok body_length -> (
+          | Ok body_length ->
               if body_length > max_request_body_size then Error Body_too_large
               else if available_body < body_length then
                 Error Invalid_content_length
@@ -145,10 +149,7 @@ let parse_request_string
                 let body =
                   String.sub raw body_start body_length |> Body.string
                 in
-                Request.make ~meth ~target ~headers ~body |> Result.ok
-                |> function
-                | Ok request -> Ok request
-                | Error _ -> Error Unsupported_request_target)))
+                make_request ~meth ~target ~headers ~body))
 
 let serialize_response response =
   let body = Response.body response |> Body.to_string in
