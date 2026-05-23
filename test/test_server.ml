@@ -271,6 +271,115 @@ let test_run_streaming_unsupported_transfer_encoding () =
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
 
+let multipart_request ~boundary body =
+  String.concat ""
+    [
+      "POST /upload HTTP/1.1\r\n";
+      "Content-Type: multipart/form-data; boundary=";
+      boundary;
+      "\r\n";
+      "Content-Length: ";
+      string_of_int (String.length body);
+      "\r\n";
+      "\r\n";
+      body;
+    ]
+
+let test_run_streaming_multipart_upload () =
+  require_network ();
+  let boundary = "AaB03x" in
+  let file_body = String.make 6_000 'u' in
+  let body =
+    String.concat ""
+      [
+        "--AaB03x\r\n";
+        "Content-Disposition: form-data; name=\"title\"\r\n";
+        "\r\n";
+        "avatar\r\n";
+        "--AaB03x\r\n";
+        "Content-Disposition: form-data; name=\"file\"; \
+         filename=\"avatar.bin\"\r\n";
+        "Content-Type: application/octet-stream\r\n";
+        "\r\n";
+        file_body;
+        "\r\n";
+        "--AaB03x--\r\n";
+      ]
+  in
+  let response =
+    with_server ~max_request_body_size:(String.length body)
+      ~request_body_mode:Camelio.Server.Streaming
+      (fun req ->
+        check bool "request body is streaming" false
+          (Camelio.Body.is_buffered (Camelio.Request.body req));
+        let title = ref None in
+        let file_bytes = ref None in
+        match
+          Camelio.Multipart.Streaming.iter_request req
+            ~on_part:(fun part source ->
+              match Camelio.Multipart.Streaming.name part with
+              | Some "title" -> title := Some (Eio.Flow.read_all source)
+              | Some "file" ->
+                  check (option string) "filename" (Some "avatar.bin")
+                    (Camelio.Multipart.Streaming.filename part);
+                  let scratch = Cstruct.create 257 in
+                  let rec count total =
+                    match Eio.Flow.single_read source scratch with
+                    | exception End_of_file -> total
+                    | read -> count (total + read)
+                  in
+                  file_bytes := Some (count 0)
+              | _ ->
+                  Eio.Flow.copy source (Eio.Flow.buffer_sink (Buffer.create 0)))
+        with
+        | Error error ->
+            Camelio.Response.text ~status:Camelio.Status.bad_request
+              (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+        | Ok () ->
+            check (option string) "title" (Some "avatar") !title;
+            check (option int) "file bytes"
+              (Some (String.length file_body))
+              !file_bytes;
+            Camelio.Response.text "uploaded\n")
+      (request (multipart_request ~boundary body))
+  in
+  check bool
+    ("200 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "body" true (String.ends_with ~suffix:"uploaded\n" response)
+
+let test_run_streaming_multipart_malformed_body () =
+  require_network ();
+  let boundary = "AaB03x" in
+  let handler_ran = ref false in
+  let body =
+    "--AaB03x\r\n\
+     Content-Disposition: form-data; name=\"file\"\r\n\
+     \r\n\
+     missing close"
+  in
+  let response =
+    with_server ~max_request_body_size:(String.length body)
+      ~request_body_mode:Camelio.Server.Streaming
+      (fun req ->
+        handler_ran := true;
+        match
+          Camelio.Multipart.Streaming.iter_request req ~on_part:(fun _ source ->
+              ignore (Eio.Flow.read_all source : string))
+        with
+        | Ok () -> Camelio.Response.text "unexpected\n"
+        | Error error ->
+            Camelio.Response.text ~status:Camelio.Status.bad_request
+              (Format.asprintf "%a\n" Camelio.Multipart.pp_error error))
+      (request (multipart_request ~boundary body))
+  in
+  check bool
+    ("400 response: " ^ response)
+    true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response);
+  check bool "handler ran" true !handler_ran
+
 let test_run_handler_exception () =
   require_network ();
   let response =
@@ -308,6 +417,10 @@ let () =
             test_run_streaming_payload_too_large;
           test_case "run streaming unsupported transfer encoding" `Quick
             test_run_streaming_unsupported_transfer_encoding;
+          test_case "run streaming multipart upload" `Quick
+            test_run_streaming_multipart_upload;
+          test_case "run streaming multipart malformed body" `Quick
+            test_run_streaming_multipart_malformed_body;
           test_case "run handler exception" `Quick test_run_handler_exception;
         ] );
     ]

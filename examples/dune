@@ -1,4 +1,11 @@
 (executable
  (name hello)
  (public_name camelio-hello)
+ (modules hello)
+ (libraries camelio eio_main))
+
+(executable
+ (name upload_streaming)
+ (public_name camelio-upload-streaming)
+ (modules upload_streaming)
  (libraries camelio eio_main))

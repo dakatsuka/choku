@@ -141,16 +141,34 @@ match Camelio.Multipart.of_request request with
              (String.length bytes)))
 ```
 
+Streaming upload example:
+
+```ocaml
+let handler request =
+  match Camelio.Multipart.Streaming.iter_request request ~on_part:(fun part source ->
+    match Camelio.Multipart.Streaming.filename part with
+    | None -> Eio.Flow.copy source (Eio.Flow.buffer_sink (Buffer.create 0))
+    | Some filename ->
+        let bytes = count_source source in
+        store_upload_metadata filename bytes)
+  with
+  | Ok () -> Camelio.Response.text "uploaded\n"
+  | Error error ->
+      Camelio.Response.text ~status:Camelio.Status.bad_request
+        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+```
+
 ## Phases
 
 - Phase 1: buffered multipart parser over existing `Body.t`.
 - Phase 2: part-level consumer helpers for copying file parts to Eio sinks and
   paths.
-- Phase 3: streaming `Body.t` or protocol-level multipart parsing with Eio
-  backpressure and resource scopes.
+- Phase 3: opt-in server streaming request bodies and
+  `Multipart.Streaming.iter_request` for callback-scoped streaming part sources.
 
 ## Open Questions
 
-- Which streaming body abstraction should Phase 3 expose?
-- Should Phase 2 add filename sanitization helpers or leave storage policy
-  entirely to applications?
+- Should future helpers add filename sanitization, tempfile management, or other
+  storage policy, or leave those entirely to applications?
+- Should multipart streaming add route-level body mode integration once server
+  routing policy exists?
