@@ -138,16 +138,20 @@ let read_request_head ~max_request_head_size flow =
   let scratch = Cstruct.create 4096 in
   let rec read_until_headers () =
     match find_header_end buffer with
-    | Some header_end -> Ok header_end
+    | Some header_end ->
+        if header_end + 4 > max_request_head_size then
+          Error Http1.Request_head_too_large
+        else Ok header_end
     | None -> (
-        match Eio.Flow.single_read flow scratch with
-        | exception End_of_file -> Error Http1.Malformed_header
-        | read ->
-            Buffer.add_string buffer
-              (Cstruct.to_string (Cstruct.sub scratch 0 read));
-            if Buffer.length buffer > max_request_head_size then
-              Error Http1.Request_head_too_large
-            else read_until_headers ())
+        if Buffer.length buffer > max_request_head_size then
+          Error Http1.Request_head_too_large
+        else
+          match Eio.Flow.single_read flow scratch with
+          | exception End_of_file -> Error Http1.Malformed_header
+          | read ->
+              Buffer.add_string buffer
+                (Cstruct.to_string (Cstruct.sub scratch 0 read));
+              read_until_headers ())
   in
   match read_until_headers () with
   | Error error -> Error error
@@ -197,43 +201,45 @@ let streaming_request_of_head ~max_request_body_size flow head buffered_body =
         let body = Body.Internal.streaming ~content_length source in
         request_of_head_body head body
 
-let read_request t flow =
-  match
-    read_request_head ~max_request_head_size:t.max_request_head_size flow
-  with
+let read_request_body t flow { buffered_body; head } =
+  match t.request_body_mode head with
+  | Buffered -> (
+      match
+        read_fixed_body ~max_request_body_size:t.max_request_body_size flow head
+          buffered_body
+      with
+      | Error error -> Error error
+      | Ok body -> request_of_head head body)
+  | Streaming ->
+      streaming_request_of_head ~max_request_body_size:t.max_request_body_size
+        flow head buffered_body
+
+let read_request_head_with_timeout ?mono_clock t flow =
+  match (t.request_head_timeout, mono_clock) with
+  | None, _ ->
+      read_request_head ~max_request_head_size:t.max_request_head_size flow
+  | Some _, None -> Error Http1.Request_head_timeout
+  | Some timeout, Some mono_clock -> (
+      let timeout = Eio.Time.Timeout.seconds mono_clock timeout in
+      match
+        Eio.Time.Timeout.run_exn timeout (fun () ->
+            read_request_head ~max_request_head_size:t.max_request_head_size
+              flow)
+      with
+      | request_head -> request_head
+      | exception Eio.Time.Timeout -> Error Http1.Request_head_timeout)
+
+let read_request ?mono_clock t flow =
+  match read_request_head_with_timeout ?mono_clock t flow with
   | Error error -> Error error
-  | Ok { buffered_body; head } -> (
-      match t.request_body_mode head with
-      | Buffered -> (
-          match
-            read_fixed_body ~max_request_body_size:t.max_request_body_size flow
-              head buffered_body
-          with
-          | Error error -> Error error
-          | Ok body -> request_of_head head body)
-      | Streaming ->
-          streaming_request_of_head
-            ~max_request_body_size:t.max_request_body_size flow head
-            buffered_body)
+  | Ok head -> read_request_body t flow head
 
 let write_response flow response =
   Eio.Flow.copy_string (Http1.serialize_response response) flow
 
 let handle_connection ?mono_clock t flow =
   let response =
-    let request =
-      match (t.request_head_timeout, mono_clock) with
-      | None, _ -> read_request t flow
-      | Some _, None -> Error Http1.Request_head_timeout
-      | Some timeout, Some mono_clock -> (
-          let timeout = Eio.Time.Timeout.seconds mono_clock timeout in
-          match
-            Eio.Time.Timeout.run_exn timeout (fun () -> read_request t flow)
-          with
-          | request -> request
-          | exception Eio.Time.Timeout -> Error Http1.Request_head_timeout)
-    in
-    match request with
+    match read_request ?mono_clock t flow with
     | Error error -> Http1.response_for_error error
     | Ok request -> (
         try t.handler request with

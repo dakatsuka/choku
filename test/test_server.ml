@@ -433,6 +433,19 @@ let test_run_large_request_head_at_limit () =
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
 
+let test_run_request_head_limit_ignores_buffered_body_prefix () =
+  require_network ();
+  let head = "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n" in
+  let response =
+    with_server ~max_request_head_size:(String.length head)
+      (fun req ->
+        check string "body" "ping"
+          (Camelio.Body.to_string (Camelio.Request.body req));
+        Camelio.Response.text "ok\n")
+      (request (head ^ "ping"))
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
 let test_run_rejects_request_head_timeout () =
   require_network ();
   Eio_main.run @@ fun env ->
@@ -488,6 +501,64 @@ let test_run_rejects_request_head_timeout () =
   check bool "408" true
     (String.starts_with ~prefix:"HTTP/1.1 408 Request Timeout" response);
   check bool "handler not run" false !handler_ran
+
+let test_run_request_head_timeout_does_not_cover_body () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let clock = Eio.Stdenv.clock env in
+  let port =
+    let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close socket)
+      (fun () ->
+        Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
+        match Unix.getsockname socket with
+        | Unix.ADDR_INET (_, port) -> port
+        | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
+  in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let server =
+    Camelio.Server.create ~max_request_body_size:4
+      ~request_head_timeout:(Some 0.02)
+      ~handler:(fun req ->
+        check string "body" "ping"
+          (Camelio.Body.to_string (Camelio.Request.body req));
+        Camelio.Response.text "ok\n")
+      ()
+  in
+  let response = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     Eio.Fiber.fork ~sw (fun () ->
+         Camelio.Server.run ~sw ~net ~mono_clock ~addr server);
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       match Eio.Net.connect ~sw:client_sw net addr with
+       | flow ->
+           Eio.Flow.copy_string "POST / HTTP/1.1\r\nContent-Length: 4\r\n\r\n"
+             flow;
+           Eio.Time.sleep clock 0.05;
+           Eio.Flow.copy_string "ping" flow;
+           Eio.Flow.shutdown flow `Send;
+           let buffer = Buffer.create 128 in
+           (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+            with End_of_file -> ());
+           Buffer.contents buffer
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     response := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  let response =
+    match !response with
+    | Some response -> response
+    | None -> fail "no response"
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
 
 let test_run_requires_mono_clock_for_request_head_timeout () =
   require_network ();
@@ -842,8 +913,12 @@ let () =
             test_run_rejects_large_request_head;
           test_case "run large request head at limit" `Quick
             test_run_large_request_head_at_limit;
+          test_case "run request head limit ignores buffered body prefix" `Quick
+            test_run_request_head_limit_ignores_buffered_body_prefix;
           test_case "run rejects request head timeout" `Quick
             test_run_rejects_request_head_timeout;
+          test_case "run request head timeout does not cover body" `Quick
+            test_run_request_head_timeout_does_not_cover_body;
           test_case "run requires mono clock for request head timeout" `Quick
             test_run_requires_mono_clock_for_request_head_timeout;
           test_case "run streaming body is capped to content-length" `Quick

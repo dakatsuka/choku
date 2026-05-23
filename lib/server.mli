@@ -18,8 +18,8 @@ val create :
   handler:Handler.t ->
   unit ->
   t
-(** [create ?max_request_body_size ?request_body_mode ?middlewares ~handler ()]
-    creates a server.
+(** [create ?max_request_body_size ?max_request_head_size ?request_head_timeout
+     ?request_body_mode ?middlewares ~handler ()] creates a server.
 
     [max_request_body_size] defaults to [1_048_576] bytes.
     [max_request_head_size] defaults to [65_536] bytes. [request_head_timeout]
@@ -33,8 +33,8 @@ val create_router :
   ?middlewares:Middleware.t list ->
   Router.t ->
   t
-(** [create_router ?max_request_body_size ?middlewares router] creates a server
-    from [router].
+(** [create_router ?max_request_body_size ?max_request_head_size
+     ?request_head_timeout ?middlewares router] creates a server from [router].
 
     Route-level request body modes are selected after request-head parsing and
     before request body delivery. Routes without an explicit body mode and
@@ -63,4 +63,10 @@ val run :
 
     The caller owns [sw]. Camelio attaches listener resources and connection
     fibers to that switch, but does not close it. The call runs until [sw] is
-    cancelled or the listening socket fails. *)
+    cancelled or the listening socket fails.
+
+    [mono_clock] is required when [server] was created with
+    [request_head_timeout = Some _].
+
+    @raise Invalid_argument
+      if request-head timeout is enabled and [mono_clock] is omitted. *)
