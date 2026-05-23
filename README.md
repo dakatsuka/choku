@@ -35,17 +35,19 @@ Run a minimal server:
 
 ```ocaml
 let handler request =
-  match Camelio.Request.(meth request, path request) with
-  | Camelio.Method.GET, "/" -> Camelio.Response.text "hello from camelio\n"
-  | _ -> Camelio.Response.text ~status:Camelio.Status.not_found "not found\n"
+  let open Camelio in
+  match Request.(meth request, path request) with
+  | Method.GET, "/" -> Response.text "hello from camelio\n"
+  | _ -> Response.text ~status:Status.not_found "not found\n"
 
 let () =
+  let open Camelio in
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080) in
-  let server = Camelio.Server.create ~handler () in
-  Camelio.Server.run ~sw ~net ~addr server
+  let server = Server.create ~handler () in
+  Server.run ~sw ~net ~addr server
 ```
 
 For small handlers, you can also split `Request.path` yourself. Router patterns
@@ -54,29 +56,31 @@ matching sees paths as ordinary strings.
 
 ```ocaml
 let handler request =
-  match Camelio.Request.(meth request, path request |> String.split_on_char '/') with
-  | Camelio.Method.GET, [ ""; "users"; id ] ->
-      Camelio.Response.text (Printf.sprintf "user %s\n" id)
-  | Camelio.Method.GET, [ ""; "health" ] ->
-      Camelio.Response.text "ok\n"
+  let open Camelio in
+  match Request.(meth request, path request |> String.split_on_char '/') with
+  | Method.GET, [ ""; "users"; id ] ->
+      Response.text (Printf.sprintf "user %s\n" id)
+  | Method.GET, [ ""; "health" ] ->
+      Response.text "ok\n"
   | _ ->
-      Camelio.Response.text ~status:Camelio.Status.not_found "not found\n"
+      Response.text ~status:Status.not_found "not found\n"
 ```
 
 Use the router when you want path parameters and first-match routing:
 
 ```ocaml
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.get "/" (fun _params _request ->
-         Camelio.Response.text "hello\n")
-  |> Camelio.Router.get "/users/:id" (fun params _request ->
-         match Camelio.Router.Params.get "id" params with
-         | None -> Camelio.Response.text ~status:Camelio.Status.not_found "not found\n"
-         | Some id -> Camelio.Response.text (Printf.sprintf "user %s\n" id))
+  let open Camelio in
+  Router.empty
+  |> Router.get "/" (fun _params _request -> Response.text "hello\n")
+  |> Router.get "/users/:id" (fun params _request ->
+         match Router.Params.get "id" params with
+         | None -> Response.text ~status:Status.not_found "not found\n"
+         | Some id -> Response.text (Printf.sprintf "user %s\n" id))
 
 let server =
-  Camelio.Server.create ~handler:(Camelio.Router.to_handler router) ()
+  let open Camelio in
+  Server.create ~handler:(Router.to_handler router) ()
 ```
 
 For router-backed servers, individual routes can opt into streaming request
@@ -84,46 +88,47 @@ bodies while other routes stay buffered:
 
 ```ocaml
 let upload params request =
-  let user_id = Camelio.Router.Params.get "id" params in
-  match Camelio.Multipart.Streaming.iter_request request ~on_part:save_part with
+  let open Camelio in
+  let user_id = Router.Params.get "id" params in
+  match Multipart.Streaming.iter_request request ~on_part:save_part with
   | Ok () ->
-      Camelio.Response.text
+      Response.text
         (Printf.sprintf "uploaded for user %s\n"
            (Option.value ~default:"unknown" user_id))
   | Error error ->
-      Camelio.Response.text ~status:Camelio.Status.bad_request
-        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+      Response.text ~status:Status.bad_request
+        (Format.asprintf "%a\n" Multipart.pp_error error)
 
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.get "/health" (fun _params _request ->
-         Camelio.Response.text "ok\n")
-  |> Camelio.Router.post
-       ~request_body_mode:Camelio.Request_body_mode.Streaming
+  let open Camelio in
+  Router.empty
+  |> Router.get "/health" (fun _params _request -> Response.text "ok\n")
+  |> Router.post
+       ~request_body_mode:Request_body_mode.Streaming
        "/users/:id/avatar"
        upload
 
-let server = Camelio.Server.create_router router
+let server =
+  let open Camelio in
+  Server.create_router router
 ```
 
 Parse buffered multipart forms for small uploads:
 
 ```ocaml
 let upload_buffered request =
-  match Camelio.Multipart.of_request request with
+  let open Camelio in
+  match Multipart.of_request request with
   | Error error ->
-      Camelio.Response.text ~status:Camelio.Status.bad_request
-        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+      Response.text ~status:Status.bad_request
+        (Format.asprintf "%a\n" Multipart.pp_error error)
   | Ok multipart -> (
-      match Camelio.Multipart.get "avatar" multipart with
+      match Multipart.get "avatar" multipart with
       | None ->
-          Camelio.Response.text ~status:Camelio.Status.bad_request
-            "missing avatar\n"
+          Response.text ~status:Status.bad_request "missing avatar\n"
       | Some part ->
-          let bytes =
-            Camelio.Multipart.Part.body part |> Camelio.Body.to_string
-          in
-          Camelio.Response.text
+          let bytes = Multipart.Part.body part |> Body.to_string in
+          Response.text
             (Printf.sprintf "received %d bytes\n" (String.length bytes)))
 ```
 
@@ -134,26 +139,28 @@ tempfile helper.
 
 ```ocaml
 let upload_streaming ~upload_dir ~random request =
+  let open Camelio in
   match
-    Camelio.Multipart.Streaming.iter_request request
+    Multipart.Streaming.iter_request request
       ~on_part:(fun part source ->
-        match Camelio.Multipart.Streaming.filename part with
+        match Multipart.Streaming.filename part with
         | None -> Eio.Flow.copy source (Eio.Flow.buffer_sink (Buffer.create 0))
         | Some filename ->
             let saved =
-              Camelio.Multipart.Tempfile.save_source ~dir:upload_dir ~random
+              Multipart.Tempfile.save_source ~dir:upload_dir ~random
                 ~original_filename:filename source
             in
             Printf.printf "received %d bytes\n%!"
-              (Camelio.Multipart.Tempfile.size saved))
+              (Multipart.Tempfile.size saved))
   with
-  | Ok () -> Camelio.Response.text "uploaded\n"
+  | Ok () -> Response.text "uploaded\n"
   | Error error ->
-      Camelio.Response.text ~status:Camelio.Status.bad_request
-        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+      Response.text ~status:Status.bad_request
+        (Format.asprintf "%a\n" Multipart.pp_error error)
 
 let server =
-  Camelio.Server.create ~request_body_mode:Camelio.Server.Streaming
+  let open Camelio in
+  Server.create ~request_body_mode:Server.Streaming
     ~handler:(upload_streaming ~upload_dir ~random) ()
 ```
 
