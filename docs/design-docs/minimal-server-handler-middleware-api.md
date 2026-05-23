@@ -326,7 +326,9 @@ end
 
 `Status.of_code` accepts integers from 100 through 599 and raises
 `Invalid_argument` outside that range. Known status codes use their standard
-reason phrase. Unknown but valid codes use an empty reason phrase.
+reason phrase. Unknown but valid codes use an empty reason phrase. Common
+standard status codes are exposed as named `Status.t` values so handlers do not
+need to construct them from integers.
 
 First milestone body contract:
 
