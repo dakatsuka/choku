@@ -17,6 +17,7 @@ None.
 - [Implement Minimal HTTP/1.1 Server](completed/0002-implement-minimal-http1-server.md)
 - [Implement Minimal Router DSL](completed/0003-implement-minimal-router-dsl.md)
 - [Implement URL-Encoded Form Support](completed/0004-implement-form-urlencoded.md)
+- [Implement Buffered Multipart Form-Data](completed/0005-implement-buffered-multipart-form-data.md)
 
 ## When To Create A Plan
 

@@ -5,6 +5,7 @@ module Headers = Headers
 module Status = Status
 module Body = Body
 module Form = Form
+module Multipart = Multipart
 module Request = Request
 module Response = Response
 module Handler = Handler

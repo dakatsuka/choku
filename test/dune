@@ -7,6 +7,7 @@
   test_request
   test_response
   test_form
+  test_multipart
   test_handler
   test_middleware
   test_router
