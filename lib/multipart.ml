@@ -26,6 +26,9 @@ module Part = struct
     Body.save_to_path ?append ~create path t.body
 end
 
+exception Streaming_malformed_body
+exception Streaming_unexpected_end_of_body
+
 type t = Part.t list
 
 let parts t = t
@@ -152,6 +155,18 @@ let parse_header_line headers line =
       try Ok (Headers.add name value headers)
       with Invalid_argument _ -> malformed)
 
+let boundary_of_request request =
+  match Headers.get "content-type" (Request.headers request) with
+  | None -> Error Missing_content_type
+  | Some content_type -> (
+      let media_type, parameters = parse_content_type content_type in
+      if not (String.equal media_type "multipart/form-data") then
+        Error (Unsupported_content_type content_type)
+      else
+        match parameter "boundary" parameters with
+        | None | Some "" -> Error Missing_boundary
+        | Some boundary -> Ok boundary)
+
 let parse_headers block =
   if String.equal block "" then Ok Headers.empty
   else
@@ -194,6 +209,236 @@ let parse_part raw_part =
               content_type;
               body = Body.string body;
             })
+
+module Streaming = struct
+  type part = {
+    headers : Headers.t;
+    name : string option;
+    filename : string option;
+    content_type : string option;
+  }
+
+  let headers t = t.headers
+  let name t = t.name
+  let filename t = t.filename
+  let content_type t = t.content_type
+
+  type stream = {
+    source : Eio.Flow.source_ty Eio.Resource.t;
+    mutable buffer : string;
+    mutable eof : bool;
+  }
+
+  let drop stream count =
+    stream.buffer <-
+      String.sub stream.buffer count (String.length stream.buffer - count)
+
+  let read_more stream =
+    if stream.eof then ()
+    else
+      let scratch = Cstruct.create 4096 in
+      match Eio.Flow.single_read stream.source scratch with
+      | exception End_of_file -> stream.eof <- true
+      | exception Body.Unexpected_end_of_body_read ->
+          raise Streaming_unexpected_end_of_body
+      | read ->
+          stream.buffer <-
+            stream.buffer ^ Cstruct.to_string (Cstruct.sub scratch 0 read)
+
+  let rec ensure stream count =
+    if String.length stream.buffer >= count then ()
+    else if stream.eof then raise Streaming_unexpected_end_of_body
+    else (
+      read_more stream;
+      ensure stream count)
+
+  let starts_with_at stream index prefix =
+    let prefix_length = String.length prefix in
+    String.length stream.buffer >= index + prefix_length
+    && String.equal prefix (String.sub stream.buffer index prefix_length)
+
+  let consume stream text =
+    ensure stream (String.length text);
+    if starts_with ~prefix:text stream.buffer then
+      drop stream (String.length text)
+    else raise Streaming_malformed_body
+
+  let rec read_until stream ~pattern ?max_size () =
+    match find_sub ~pattern stream.buffer ~start:0 with
+    | Some index ->
+        Option.iter
+          (fun max_size ->
+            if index > max_size then raise Streaming_malformed_body)
+          max_size;
+        let before = String.sub stream.buffer 0 index in
+        drop stream (index + String.length pattern);
+        before
+    | None ->
+        Option.iter
+          (fun max_size ->
+            let rec prefix_suffix_length length =
+              if length = 0 then 0
+              else
+                let suffix_start = String.length stream.buffer - length in
+                if
+                  suffix_start >= 0
+                  && String.equal
+                       (String.sub stream.buffer suffix_start length)
+                       (String.sub pattern 0 length)
+                then length
+                else prefix_suffix_length (length - 1)
+            in
+            let possible_delimiter_bytes =
+              prefix_suffix_length
+                (min (String.length stream.buffer) (String.length pattern - 1))
+            in
+            if String.length stream.buffer - possible_delimiter_bytes > max_size
+            then raise Streaming_malformed_body)
+          max_size;
+        if stream.eof then raise Streaming_unexpected_end_of_body;
+        read_more stream;
+        read_until stream ~pattern ?max_size ()
+
+  let parse_after_boundary stream =
+    ensure stream 2;
+    if starts_with ~prefix:"--" stream.buffer then (
+      drop stream 2;
+      if String.equal stream.buffer "" && not stream.eof then read_more stream;
+      if
+        String.length stream.buffer = 1
+        && Char.equal stream.buffer.[0] '\r'
+        && not stream.eof
+      then read_more stream;
+      if starts_with ~prefix:"\r\n" stream.buffer then drop stream 2;
+      while String.equal stream.buffer "" && not stream.eof do
+        read_more stream
+      done;
+      if not (String.equal stream.buffer "") then raise Streaming_malformed_body;
+      `Close)
+    else if starts_with ~prefix:"\r\n" stream.buffer then (
+      drop stream 2;
+      `Part_start)
+    else raise Streaming_malformed_body
+
+  let delimiter_after_is_valid stream after =
+    if String.length stream.buffer >= after + 2 then
+      starts_with_at stream after "--" || starts_with_at stream after "\r\n"
+    else false
+
+  let delimiter_after_needs_more stream after =
+    (not stream.eof) && String.length stream.buffer < after + 2
+
+  let rec find_valid_delimiter stream delimiter start =
+    match find_sub ~pattern:delimiter stream.buffer ~start with
+    | None -> `Not_found
+    | Some index ->
+        let after = index + String.length delimiter in
+        if delimiter_after_is_valid stream after then `Found index
+        else if delimiter_after_needs_more stream after then `Need_more
+        else find_valid_delimiter stream delimiter (index + 1)
+
+  type part_source = {
+    stream : stream;
+    delimiter : string;
+    mutable ended : bool;
+  }
+
+  module Part_source = struct
+    type t = part_source
+
+    let read_methods = []
+
+    let single_read t buffer =
+      if t.ended then raise End_of_file;
+      let capacity = Cstruct.length buffer in
+      let rec loop () =
+        match find_valid_delimiter t.stream t.delimiter 0 with
+        | `Found 0 ->
+            t.ended <- true;
+            raise End_of_file
+        | `Found index ->
+            let read = min capacity index in
+            Cstruct.blit_from_string t.stream.buffer 0 buffer 0 read;
+            drop t.stream read;
+            read
+        | `Need_more ->
+            read_more t.stream;
+            loop ()
+        | `Not_found ->
+            if t.stream.eof then raise Streaming_unexpected_end_of_body;
+            let keep = String.length t.delimiter - 1 in
+            let available = String.length t.stream.buffer - keep in
+            if available > 0 then (
+              let read = min capacity available in
+              Cstruct.blit_from_string t.stream.buffer 0 buffer 0 read;
+              drop t.stream read;
+              read)
+            else (
+              read_more t.stream;
+              loop ())
+      in
+      loop ()
+  end
+
+  let part_source stream delimiter =
+    Eio.Resource.T
+      ( { stream; delimiter; ended = false },
+        Eio.Flow.Pi.source (module Part_source) )
+
+  let drain source =
+    let scratch = Cstruct.create 4096 in
+    let rec loop () =
+      match Eio.Flow.single_read source scratch with
+      | exception End_of_file -> ()
+      | _ -> loop ()
+    in
+    loop ()
+
+  let part_of_headers headers =
+    let name, filename = parse_content_disposition headers in
+    let content_type = Headers.get "content-type" headers in
+    { headers; name; filename; content_type }
+
+  let iter_stream ~max_header_size ~boundary source ~on_part =
+    let stream = { source; buffer = ""; eof = false } in
+    let delimiter = "--" ^ boundary in
+    let part_delimiter = "\r\n" ^ delimiter in
+    consume stream delimiter;
+    let rec loop boundary_state =
+      match boundary_state with
+      | `Close -> ()
+      | `Part_start ->
+          let header_block =
+            read_until stream ~pattern:"\r\n\r\n" ~max_size:max_header_size ()
+          in
+          let headers =
+            match parse_headers header_block with
+            | Ok headers -> headers
+            | Error _ -> raise Streaming_malformed_body
+          in
+          let part = part_of_headers headers in
+          let source = part_source stream part_delimiter in
+          on_part part source;
+          drain source;
+          consume stream part_delimiter;
+          loop (parse_after_boundary stream)
+    in
+    loop (parse_after_boundary stream)
+
+  let iter_request ?(max_header_size = 8192) request ~on_part =
+    if max_header_size < 0 then invalid_arg "negative max_header_size";
+    match boundary_of_request request with
+    | Error _ as error -> error
+    | Ok boundary -> (
+        try
+          Body.with_source (Request.body request) (fun source ->
+              iter_stream ~max_header_size ~boundary source ~on_part);
+          Ok ()
+        with
+        | Streaming_malformed_body -> Error Malformed_body
+        | Streaming_unexpected_end_of_body | Body.Unexpected_end_of_body_read ->
+            Error Unexpected_end_of_body)
+end
 
 let parse_after_boundary body index =
   if starts_with ~prefix:"--" (substring_from body index) then
@@ -240,18 +485,6 @@ let decode ~boundary body =
                         loop (part :: parts) next_start))
           in
           loop [] first_part_start
-
-let boundary_of_request request =
-  match Headers.get "content-type" (Request.headers request) with
-  | None -> Error Missing_content_type
-  | Some content_type -> (
-      let media_type, parameters = parse_content_type content_type in
-      if not (String.equal media_type "multipart/form-data") then
-        Error (Unsupported_content_type content_type)
-      else
-        match parameter "boundary" parameters with
-        | None | Some "" -> Error Missing_boundary
-        | Some boundary -> Ok boundary)
 
 let of_request request =
   match boundary_of_request request with

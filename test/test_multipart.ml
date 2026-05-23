@@ -255,6 +255,224 @@ let test_of_request_limited_rejects_content_type_errors () =
     (Camelio.Multipart.of_request_limited ~max_size:100
        (request ~content_type:"multipart/form-data" multipart_body))
 
+let streaming_request ?content_type body =
+  let body =
+    Camelio.Body.Internal.streaming ~content_length:(String.length body)
+      (Eio.Flow.string_source body)
+  in
+  request_with_body ?content_type body
+
+module Chunk_source = struct
+  type t = { mutable chunks : string list }
+
+  let read_methods = []
+
+  let single_read t buffer =
+    match t.chunks with
+    | [] -> raise End_of_file
+    | chunk :: rest ->
+        let read = min (String.length chunk) (Cstruct.length buffer) in
+        Cstruct.blit_from_string chunk 0 buffer 0 read;
+        if read = String.length chunk then t.chunks <- rest
+        else
+          t.chunks <- String.sub chunk read (String.length chunk - read) :: rest;
+        read
+end
+
+let chunked_streaming_request ?content_type ~content_length chunks =
+  let source =
+    Eio.Resource.T
+      ({ Chunk_source.chunks }, Eio.Flow.Pi.source (module Chunk_source))
+  in
+  let body = Camelio.Body.Internal.streaming ~content_length source in
+  request_with_body ?content_type body
+
+let test_streaming_iter_request () =
+  let seen = ref [] in
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      multipart_body
+  in
+  let parse_result =
+    Camelio.Multipart.Streaming.iter_request request
+      ~on_part:(fun part source ->
+        let body = Eio.Flow.read_all source in
+        seen :=
+          Printf.sprintf "%s|%s|%s|%s"
+            (Option.value ~default:"" (Camelio.Multipart.Streaming.name part))
+            (Option.value ~default:""
+               (Camelio.Multipart.Streaming.filename part))
+            (Option.value ~default:""
+               (Camelio.Multipart.Streaming.content_type part))
+            body
+          :: !seen)
+  in
+  check (result unit multipart_error) "result" (Ok ()) parse_result;
+  check (list string) "parts"
+    [ "field1|||value1"; "file|hello.txt|text/plain|hello file" ]
+    (List.rev !seen)
+
+let test_streaming_iter_request_partial_consumption () =
+  let seen = ref [] in
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      multipart_body
+  in
+  let parse_result =
+    Camelio.Multipart.Streaming.iter_request request
+      ~on_part:(fun part source ->
+        let body =
+          match Camelio.Multipart.Streaming.name part with
+          | Some "field1" ->
+              let buffer = Cstruct.create 3 in
+              ignore (Eio.Flow.single_read source buffer : int);
+              Cstruct.to_string buffer
+          | _ -> Eio.Flow.read_all source
+        in
+        seen := body :: !seen)
+  in
+  check (result unit multipart_error) "result" (Ok ()) parse_result;
+  check (list string) "parts" [ "val"; "hello file" ] (List.rev !seen)
+
+let test_streaming_iter_request_rejects_malformed_body () =
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      "not multipart"
+  in
+  check
+    (result reject multipart_error)
+    "malformed" (Error Camelio.Multipart.Malformed_body)
+    (Camelio.Multipart.Streaming.iter_request request ~on_part:(fun _ _ ->
+         fail "handler should not run"))
+
+let test_streaming_iter_request_rejects_content_type_errors () =
+  check
+    (result reject multipart_error)
+    "missing content-type" (Error Camelio.Multipart.Missing_content_type)
+    (Camelio.Multipart.Streaming.iter_request (streaming_request multipart_body)
+       ~on_part:(fun _ _ -> fail "handler should not run"));
+  check
+    (result reject multipart_error)
+    "unsupported content-type"
+    (Error (Camelio.Multipart.Unsupported_content_type "application/json"))
+    (Camelio.Multipart.Streaming.iter_request
+       (streaming_request ~content_type:"application/json" multipart_body)
+       ~on_part:(fun _ _ -> fail "handler should not run"));
+  check
+    (result reject multipart_error)
+    "missing boundary" (Error Camelio.Multipart.Missing_boundary)
+    (Camelio.Multipart.Streaming.iter_request
+       (streaming_request ~content_type:"multipart/form-data" multipart_body)
+       ~on_part:(fun _ _ -> fail "handler should not run"))
+
+let test_streaming_iter_request_rejects_negative_max_header_size () =
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      multipart_body
+  in
+  check_raises "negative max_header_size"
+    (Invalid_argument "negative max_header_size") (fun () ->
+      ignore
+        (Camelio.Multipart.Streaming.iter_request ~max_header_size:(-1) request
+           ~on_part:(fun _ _ -> ())
+          : (unit, Camelio.Multipart.error) result))
+
+let test_streaming_iter_request_propagates_callback_exception () =
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      multipart_body
+  in
+  check_raises "callback exception" (Failure "boom") (fun () ->
+      ignore
+        (Camelio.Multipart.Streaming.iter_request request ~on_part:(fun _ _ ->
+             failwith "boom")
+          : (unit, Camelio.Multipart.error) result))
+
+let test_streaming_iter_request_rejects_large_headers () =
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x"
+      multipart_body
+  in
+  check
+    (result reject multipart_error)
+    "large headers" (Error Camelio.Multipart.Malformed_body)
+    (Camelio.Multipart.Streaming.iter_request ~max_header_size:10 request
+       ~on_part:(fun _ _ -> fail "handler should not run"))
+
+let test_streaming_iter_request_allows_split_header_terminator_at_limit () =
+  let header = "Content-Disposition: form-data; name=\"field1\"" in
+  let chunks =
+    [ "--AaB03x\r\n"; header; "\r"; "\n\r\nvalue1\r\n--AaB03x--\r\n" ]
+  in
+  let content_length =
+    chunks |> List.map String.length |> List.fold_left ( + ) 0
+  in
+  let request =
+    chunked_streaming_request ~content_length
+      ~content_type:"multipart/form-data; boundary=AaB03x" chunks
+  in
+  let seen = ref [] in
+  let parse_result =
+    Camelio.Multipart.Streaming.iter_request
+      ~max_header_size:(String.length header) request ~on_part:(fun _ source ->
+        seen := Eio.Flow.read_all source :: !seen)
+  in
+  check (result unit multipart_error) "result" (Ok ()) parse_result;
+  check (list string) "body" [ "value1" ] (List.rev !seen)
+
+let test_streaming_iter_request_rejects_missing_final_boundary () =
+  let body =
+    "--AaB03x\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1"
+  in
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x" body
+  in
+  check
+    (result reject multipart_error)
+    "unexpected end" (Error Camelio.Multipart.Unexpected_end_of_body)
+    (Camelio.Multipart.Streaming.iter_request request ~on_part:(fun _ source ->
+         ignore (Eio.Flow.read_all source : string)))
+
+let test_streaming_iter_request_preserves_boundary_like_body () =
+  let body =
+    "--AaB03x\r\n\
+     Content-Disposition: form-data; name=\"field1\"\r\n\
+     \r\n\
+     before\r\n\
+     --AaB03x-not-a-boundary\r\n\
+     after\r\n\
+     --AaB03x--\r\n"
+  in
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x" body
+  in
+  let seen = ref [] in
+  let parse_result =
+    Camelio.Multipart.Streaming.iter_request request ~on_part:(fun _ source ->
+        seen := Eio.Flow.read_all source :: !seen)
+  in
+  check (result unit multipart_error) "result" (Ok ()) parse_result;
+  check (list string) "body"
+    [ "before\r\n--AaB03x-not-a-boundary\r\nafter" ]
+    (List.rev !seen)
+
+let test_streaming_iter_request_handles_split_boundary () =
+  let body =
+    "--AaB03x\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\n"
+    ^ String.make 4_040 'x' ^ "\r\n--AaB03x--\r\n"
+  in
+  let request =
+    streaming_request ~content_type:"multipart/form-data; boundary=AaB03x" body
+  in
+  let seen = ref [] in
+  let parse_result =
+    Camelio.Multipart.Streaming.iter_request request ~on_part:(fun _ source ->
+        seen := Eio.Flow.read_all source :: !seen)
+  in
+  check (result unit multipart_error) "result" (Ok ()) parse_result;
+  check (list int) "body length" [ 4_040 ]
+    (List.map String.length (List.rev !seen))
+
 let test_decode_rejects_malformed_body () =
   List.iter
     (fun body ->
@@ -335,6 +553,29 @@ let () =
             test_of_request_rejects_missing_boundary;
           test_case "of_request_limited rejects content-type errors" `Quick
             test_of_request_limited_rejects_content_type_errors;
+          test_case "streaming iter_request" `Quick test_streaming_iter_request;
+          test_case "streaming iter_request partial consumption" `Quick
+            test_streaming_iter_request_partial_consumption;
+          test_case "streaming iter_request rejects malformed body" `Quick
+            test_streaming_iter_request_rejects_malformed_body;
+          test_case "streaming iter_request rejects content-type errors" `Quick
+            test_streaming_iter_request_rejects_content_type_errors;
+          test_case "streaming iter_request rejects negative max header size"
+            `Quick test_streaming_iter_request_rejects_negative_max_header_size;
+          test_case "streaming iter_request propagates callback exception"
+            `Quick test_streaming_iter_request_propagates_callback_exception;
+          test_case "streaming iter_request rejects large headers" `Quick
+            test_streaming_iter_request_rejects_large_headers;
+          test_case
+            "streaming iter_request allows split header terminator at limit"
+            `Quick
+            test_streaming_iter_request_allows_split_header_terminator_at_limit;
+          test_case "streaming iter_request rejects missing final boundary"
+            `Quick test_streaming_iter_request_rejects_missing_final_boundary;
+          test_case "streaming iter_request preserves boundary-like body" `Quick
+            test_streaming_iter_request_preserves_boundary_like_body;
+          test_case "streaming iter_request handles split boundary" `Quick
+            test_streaming_iter_request_handles_split_boundary;
           test_case "decode rejects malformed body" `Quick
             test_decode_rejects_malformed_body;
           test_case "decode rejects empty boundary" `Quick

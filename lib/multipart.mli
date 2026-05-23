@@ -42,6 +42,44 @@ module Part : sig
       [path] using {!Eio.Path.save}. *)
 end
 
+module Streaming : sig
+  type part
+  (** Metadata for one streaming multipart part. *)
+
+  val headers : part -> Headers.t
+  (** [headers part] returns the part headers in insertion order. *)
+
+  val name : part -> string option
+  (** [name part] returns the [Content-Disposition] [name] parameter, if
+      present. *)
+
+  val filename : part -> string option
+  (** [filename part] returns the [Content-Disposition] [filename] parameter, if
+      present. *)
+
+  val content_type : part -> string option
+  (** [content_type part] returns the part [Content-Type] header, if present. *)
+
+  val iter_request :
+    ?max_header_size:int ->
+    Request.t ->
+    on_part:(part -> Eio.Flow.source_ty Eio.Resource.t -> unit) ->
+    (unit, error) result
+  (** [iter_request ?max_header_size request ~on_part] streams each multipart
+      part in [request] to [on_part].
+
+      The request must have [Content-Type: multipart/form-data] with a non-empty
+      [boundary] parameter. Media type matching is case-insensitive.
+
+      Each part source is valid only for the dynamic extent of its [on_part]
+      callback. If [on_part] returns before consuming the source, the iterator
+      drains the rest of that part before reading the next one.
+
+      [max_header_size] defaults to [8192] bytes.
+
+      @raise Invalid_argument if [max_header_size] is negative. *)
+end
+
 val decode : boundary:string -> string -> (t, error) result
 (** [decode ~boundary body] parses [body] as multipart data using [boundary].
 

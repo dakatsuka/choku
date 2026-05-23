@@ -76,6 +76,24 @@ and boundary validation, then reads `Request.body request` with
 server-created streaming bodies opt into a bounded in-memory multipart parse.
 It is still the buffered parser internally and does not expose streaming parts.
 
+`Multipart.Streaming.iter_request ?max_header_size request ~on_part` is the
+first true streaming multipart API. It validates `Content-Type` and boundary
+before consuming the body, then parses canonical CRLF multipart framing from
+`Body.with_source`. Each callback receives part metadata and a source that yields
+bytes up to the next boundary without exposing boundary bytes.
+
+Part sources are scoped to the dynamic extent of the callback. They must not be
+stored, read concurrently, or read after the callback returns. If the callback
+returns normally without consuming the part source, the iterator drains the
+remaining part bytes before parsing the next part. If the callback raises, the
+iterator does not drain and re-raises the application exception unchanged.
+
+`max_header_size` is a per-part header block limit. It defaults to `8192` bytes,
+raises `Invalid_argument` when negative, and returns `Malformed_body` when a
+part header block exceeds the limit. Premature request-body termination maps to
+`Unexpected_end_of_body`; complete but invalid multipart syntax maps to
+`Malformed_body`.
+
 ## Contracts
 
 The first implementation should add:
@@ -103,6 +121,21 @@ module Multipart : sig
     val copy_to_sink : t -> _ Eio.Flow.sink -> unit
     val save_to_path :
       ?append:bool -> create:Eio.Fs.create -> _ Eio.Path.t -> t -> unit
+  end
+
+  module Streaming : sig
+    type part
+
+    val headers : part -> Headers.t
+    val name : part -> string option
+    val filename : part -> string option
+    val content_type : part -> string option
+
+    val iter_request :
+      ?max_header_size:int ->
+      Request.t ->
+      on_part:(part -> Eio.Flow.source_ty Eio.Resource.t -> unit) ->
+      (unit, error) result
   end
 
   val decode : boundary:string -> string -> (t, error) result

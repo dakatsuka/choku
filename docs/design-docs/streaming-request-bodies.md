@@ -23,7 +23,8 @@ with backpressure and structured resource ownership.
   flows without buffering everything first.
 - Preserve existing buffered APIs where practical.
 - Keep ownership and cancellation aligned with the request-serving fiber.
-- Avoid callback-based streaming APIs.
+- Avoid callback-based streaming APIs except where a callback is used to scope a
+  streaming multipart part source to the parser's ownership window.
 
 ## Non-Goals
 
@@ -106,8 +107,9 @@ val iter :
   unit
 ```
 
-The exact multipart streaming API needs its own design after the body contract
-is settled.
+The multipart callback is a resource-scoping API: the part source is valid only
+while the parser is inside the callback, and the parser regains ownership after
+the callback returns.
 
 As an interim adapter, `Multipart.of_request_limited ~max_size` may consume a
 streaming request body into memory through `Body.to_string_limited` and then use

@@ -44,6 +44,16 @@ parts.
 - `Multipart.of_request_limited` supports server-created streaming request
   bodies by using `Body.to_string_limited`; it is an interim bounded adapter,
   not a true streaming multipart parser.
+- `Multipart.Streaming.iter_request ?max_header_size request ~on_part` streams
+  canonical CRLF multipart parts without buffering whole part bodies.
+- Streaming part sources are valid only during the `on_part` callback. If the
+  callback returns before fully consuming the part source, the iterator drains
+  the remainder of that part before reading the next part.
+- Callback exceptions propagate unchanged. The iterator does not drain the
+  current part when the callback raises.
+- `max_header_size` applies per part header block, defaults to `8192` bytes,
+  rejects negative values with `Invalid_argument`, and returns `Malformed_body`
+  when exceeded.
 - `Content-Type` matching is case-insensitive for the media type and supports
   parameters.
 - Missing `Content-Type` returns `Missing_content_type`.
@@ -82,6 +92,21 @@ module Multipart : sig
     val copy_to_sink : t -> _ Eio.Flow.sink -> unit
     val save_to_path :
       ?append:bool -> create:Eio.Fs.create -> _ Eio.Path.t -> t -> unit
+  end
+
+  module Streaming : sig
+    type part
+
+    val headers : part -> Headers.t
+    val name : part -> string option
+    val filename : part -> string option
+    val content_type : part -> string option
+
+    val iter_request :
+      ?max_header_size:int ->
+      Request.t ->
+      on_part:(part -> Eio.Flow.source_ty Eio.Resource.t -> unit) ->
+      (unit, error) result
   end
 
   val decode : boundary:string -> string -> (t, error) result
