@@ -7,6 +7,7 @@ module Body = Body
 module Form = Form
 module Multipart = Multipart
 module Request_body_mode = Request_body_mode
+module Request_head = Request_head
 module Request = Request
 module Response = Response
 module Handler = Handler

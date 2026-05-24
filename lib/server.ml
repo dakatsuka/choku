@@ -2,12 +2,16 @@
 
 type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
+type request_body_mode_decision =
+  | Body_mode of request_body_mode
+  | Selector_failed
+
 type t = {
   keep_alive : bool;
   max_request_body_size : int;
   max_request_head_size : int;
   request_head_timeout : float option;
-  request_body_mode : Http1.request_head -> request_body_mode;
+  request_body_mode : Http1.request_head -> request_body_mode_decision;
   handler : Handler.t;
 }
 
@@ -33,7 +37,34 @@ let create ?(keep_alive = true)
     max_request_body_size;
     max_request_head_size;
     request_head_timeout;
-    request_body_mode = (fun _head -> request_body_mode);
+    request_body_mode = (fun _head -> Body_mode request_body_mode);
+    handler = Middleware.apply middlewares handler;
+  }
+
+let create_with_request_body_selector ?(keep_alive = true)
+    ?(max_request_body_size = default_max_request_body_size)
+    ?(max_request_head_size = default_max_request_head_size)
+    ?(request_head_timeout = None) ~request_body_mode ?(middlewares = [])
+    ~handler () =
+  if max_request_body_size < 0 then invalid_arg "max_request_body_size < 0";
+  validate_request_head_config ~max_request_head_size ~request_head_timeout;
+  let request_body_mode head =
+    try
+      let selector_head =
+        Request_head.make ~meth:head.Http1.meth ~target:head.target
+          ~headers:head.headers
+      in
+      Body_mode (request_body_mode selector_head)
+    with
+    | Eio.Cancel.Cancelled _ as exn -> raise exn
+    | _ -> Selector_failed
+  in
+  {
+    keep_alive;
+    max_request_body_size;
+    max_request_head_size;
+    request_head_timeout;
+    request_body_mode;
     handler = Middleware.apply middlewares handler;
   }
 
@@ -49,8 +80,8 @@ let create_router ?(keep_alive = true)
       Router.Internal.match_route ~meth:head.Http1.meth ~target:head.target
         router
     with
-    | None -> Buffered
-    | Some route -> route.request_body_mode
+    | None -> Body_mode Buffered
+    | Some route -> Body_mode route.request_body_mode
   in
   {
     keep_alive;
@@ -233,25 +264,31 @@ let streaming_request_of_head ~max_request_body_size ~max_chunk_metadata_size
       let body = Body.Internal.streaming source in
       request_of_head_body head body
 
+type request_after_head =
+  | Request_after_head of Request.t * request_body_mode
+  | Request_after_head_error of Http1.error
+  | Request_body_selector_failed
+
 let read_request_after_head t reader head =
   match t.request_body_mode head with
-  | Buffered -> (
+  | Selector_failed -> Request_body_selector_failed
+  | Body_mode Buffered -> (
       match
         read_fixed_body ~max_request_body_size:t.max_request_body_size reader
           head ~max_chunk_metadata_size:t.max_request_head_size
       with
-      | Error error -> Error error
+      | Error error -> Request_after_head_error error
       | Ok body -> (
           match request_of_head head body with
-          | Ok request -> Ok (request, Buffered)
-          | Error error -> Error error))
-  | Streaming -> (
+          | Ok request -> Request_after_head (request, Buffered)
+          | Error error -> Request_after_head_error error))
+  | Body_mode Streaming -> (
       match
         streaming_request_of_head ~max_request_body_size:t.max_request_body_size
           ~max_chunk_metadata_size:t.max_request_head_size reader head
       with
-      | Ok request -> Ok (request, Streaming)
-      | Error error -> Error error)
+      | Ok request -> Request_after_head (request, Streaming)
+      | Error error -> Request_after_head_error error)
 
 let read_request_head_with_timeout ?mono_clock t reader =
   match (t.request_head_timeout, mono_clock) with
@@ -273,6 +310,7 @@ type request_read =
   | Read_request of Request.t * request_body_mode
   | Read_end_of_connection
   | Read_error of Http1.error
+  | Read_selector_failed of Method.t
 
 let read_request ?mono_clock t reader =
   match read_request_head_with_timeout ?mono_clock t reader with
@@ -280,9 +318,10 @@ let read_request ?mono_clock t reader =
   | Request_head_error error -> Read_error error
   | Request_head head -> (
       match read_request_after_head t reader head with
-      | Ok (request, request_body_mode) ->
+      | Request_after_head (request, request_body_mode) ->
           Read_request (request, request_body_mode)
-      | Error error -> Read_error error)
+      | Request_after_head_error error -> Read_error error
+      | Request_body_selector_failed -> Read_selector_failed head.meth)
 
 type connection_decision = Keep_open | Close
 
@@ -328,6 +367,10 @@ let handle_connection ?mono_clock t flow =
     | Read_end_of_connection -> ()
     | Read_error error ->
         write_response ~connection:Close flow (Http1.response_for_error error)
+    | Read_selector_failed meth ->
+        let include_body = not (Method.equal meth Method.HEAD) in
+        write_response ~include_body ~connection:Close flow
+          default_internal_error
     | Read_request (request, request_body_mode) ->
         let handler_failed = ref false in
         let response =

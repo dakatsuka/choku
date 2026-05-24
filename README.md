@@ -220,6 +220,23 @@ Routes without `~request_body_mode` keep the default buffered body behavior.
 Route-level body-mode selection is not available when passing
 `Router.to_handler router` to `Server.create ~handler`.
 
+For a custom dispatcher that does not use `Router.t`, select body mode from the
+parsed request head before the request body is read:
+
+```ocaml
+let request_body_mode head =
+  let open Choku in
+  match Request_head.(meth head, path head) with
+  | Method.POST, "/upload" -> Request_body_mode.Streaming
+  | _ -> Request_body_mode.Buffered
+
+let server =
+  Choku.Server.create_with_request_body_selector
+    ~request_body_mode
+    ~handler
+    ()
+```
+
 The repository includes runnable examples:
 
 ```sh

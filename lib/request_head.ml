@@ -3,18 +3,14 @@ type t = {
   target : string;
   path : string;
   headers : Headers.t;
-  body : Body.t;
 }
 
-let path_of_target target = Request_target.path_of_origin_form target
-
-let make ~meth ~target ~headers ~body =
+let make ~meth ~target ~headers =
   if not (Request_target.is_valid_origin_form target) then
     invalid_arg "invalid origin-form target";
-  { meth; target; path = path_of_target target; headers; body }
+  { meth; target; path = Request_target.path_of_origin_form target; headers }
 
 let meth t = t.meth
 let target t = t.target
 let path t = t.path
 let headers t = t.headers
-let body t = t.body

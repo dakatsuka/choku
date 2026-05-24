@@ -5,3 +5,8 @@ let is_valid_origin_form target =
        (String.exists
           (function '\x00' .. '\x20' | '\x7f' | '#' -> true | _ -> false)
           target)
+
+let path_of_origin_form target =
+  match String.index_opt target '?' with
+  | None -> target
+  | Some index -> String.sub target 0 index

@@ -31,6 +31,31 @@ val create :
     [Middleware.apply] exactly once. [request_body_mode] defaults to [Buffered].
 *)
 
+val create_with_request_body_selector :
+  ?keep_alive:bool ->
+  ?max_request_body_size:int ->
+  ?max_request_head_size:int ->
+  ?request_head_timeout:float option ->
+  request_body_mode:(Request_head.t -> request_body_mode) ->
+  ?middlewares:Middleware.t list ->
+  handler:Handler.t ->
+  unit ->
+  t
+(** [create_with_request_body_selector ?keep_alive ?max_request_body_size
+     ?max_request_head_size ?request_head_timeout ~request_body_mode
+     ?middlewares ~handler ()] creates a handler-backed server whose request
+    body delivery mode is selected from the parsed request head before body
+    delivery.
+
+    The selector runs once per successfully parsed request head, before the
+    request body is read and before middleware or handler execution. It may
+    inspect method, target, path, and headers through {!Request_head}.
+
+    If the selector raises a non-cancellation exception, the server writes
+    [500 Internal Server Error] when possible and closes the connection. HEAD
+    requests still suppress response body bytes. [Eio.Cancel.Cancelled _]
+    propagates as cancellation. *)
+
 val create_router :
   ?keep_alive:bool ->
   ?max_request_body_size:int ->
@@ -56,7 +81,9 @@ val handle : t -> Request.t -> Response.t
 
     For servers created with {!create_router}, [handle] invokes the router
     handler with the already-built [request]; it does not perform route-level
-    body-mode selection because the body has already been constructed. *)
+    body-mode selection because the body has already been constructed. Servers
+    created with {!create_with_request_body_selector} likewise do not run the
+    selector from [handle]. *)
 
 val run :
   sw:Eio.Switch.t ->

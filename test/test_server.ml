@@ -49,6 +49,31 @@ let test_create_router_handle_uses_existing_request_body () =
   let response = Choku.Server.handle server request in
   check int "status" 200 (Choku.Status.code (Choku.Response.status response))
 
+let test_create_with_request_body_selector_handle_uses_existing_request_body ()
+    =
+  let selector_calls = ref 0 in
+  let server =
+    Choku.Server.create_with_request_body_selector
+      ~request_body_mode:(fun _ ->
+        incr selector_calls;
+        Choku.Request_body_mode.Streaming)
+      ~handler:(fun request ->
+        check bool "request body is buffered" true
+          (Choku.Body.is_buffered (Choku.Request.body request));
+        Choku.Response.text
+          (Choku.Body.to_string (Choku.Request.body request) ^ "\n"))
+      ()
+  in
+  let request =
+    Choku.Request.make ~meth:Choku.Method.POST ~target:"/upload"
+      ~headers:Choku.Headers.empty
+      ~body:(Choku.Body.string "already built")
+  in
+  let response = Choku.Server.handle server request in
+  check int "selector calls" 0 !selector_calls;
+  check string "body" "already built\n"
+    (Choku.Response.body response |> Choku.Body.to_string)
+
 let test_default_max_request_body_size () =
   let server =
     Choku.Server.create ~handler:(fun _ -> Choku.Response.text "ok") ()
@@ -118,6 +143,15 @@ let with_router_server ?(max_request_body_size = 4) ?max_request_head_size
   let server =
     Choku.Server.create_router ?keep_alive ?max_request_head_size
       ?request_head_timeout ~max_request_body_size router
+  in
+  with_running_server ?mono_clock server f
+
+let with_selector_server ?(max_request_body_size = 4) ?max_request_head_size
+    ?request_head_timeout ?mono_clock ?keep_alive ~request_body_mode handler f =
+  let server =
+    Choku.Server.create_with_request_body_selector ?keep_alive
+      ?max_request_head_size ?request_head_timeout ~max_request_body_size
+      ~request_body_mode ~handler ()
   in
   with_running_server ?mono_clock server f
 
@@ -1579,6 +1613,171 @@ let test_run_router_streaming_multipart_upload () =
     (String.starts_with ~prefix:"HTTP/1.1 200 OK" upload);
   check bool "upload body" true (String.ends_with ~suffix:"uploaded\n" upload)
 
+let test_run_selector_chooses_buffered_or_streaming_by_path () =
+  require_network ();
+  let request_body_mode head =
+    match Choku.Request_head.path head with
+    | "/upload" -> Choku.Request_body_mode.Streaming
+    | _ -> Choku.Request_body_mode.Buffered
+  in
+  let handler request =
+    match Choku.Request.path request with
+    | "/upload" ->
+        check bool "upload body is streaming" false
+          (Choku.Body.is_buffered (Choku.Request.body request));
+        let body =
+          match
+            Choku.Body.to_string_limited ~max_size:8
+              (Choku.Request.body request)
+          with
+          | Ok body -> body
+          | Error error -> Format.asprintf "%a" Choku.Body.pp_error error
+        in
+        Choku.Response.text (body ^ "\n")
+    | _ ->
+        check bool "default body is buffered" true
+          (Choku.Body.is_buffered (Choku.Request.body request));
+        Choku.Response.text
+          (Choku.Body.to_string (Choku.Request.body request) ^ "\n")
+  in
+  let buffered =
+    with_selector_server ~max_request_body_size:8 ~request_body_mode handler
+      (request
+         "POST /echo HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          ping")
+  in
+  check bool "buffered 200" true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" buffered);
+  check bool "buffered body" true (String.ends_with ~suffix:"ping\n" buffered);
+  let streaming =
+    with_selector_server ~max_request_body_size:8 ~request_body_mode handler
+      (request
+         "POST /upload HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          pong")
+  in
+  check bool "streaming 200" true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" streaming);
+  check bool "streaming body" true (String.ends_with ~suffix:"pong\n" streaming)
+
+let test_run_selector_can_inspect_method_and_headers () =
+  require_network ();
+  let request_body_mode head =
+    match
+      ( Choku.Request_head.meth head,
+        Choku.Headers.get "x-body-mode" (Choku.Request_head.headers head) )
+    with
+    | Choku.Method.POST, Some "streaming" -> Choku.Request_body_mode.Streaming
+    | _ -> Choku.Request_body_mode.Buffered
+  in
+  let response =
+    with_selector_server ~request_body_mode
+      (fun request ->
+        check bool "body is streaming" false
+          (Choku.Body.is_buffered (Choku.Request.body request));
+        Choku.Response.text "ok\n")
+      (request
+         "POST /upload HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          X-Body-Mode: streaming\r\n\
+          Content-Length: 0\r\n\
+          \r\n")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
+let test_run_selector_runs_once_per_keep_alive_request () =
+  require_network ();
+  let selector_calls = ref 0 in
+  let request_body_mode head =
+    incr selector_calls;
+    check bool "selector sees method" true
+      (Choku.Method.equal Choku.Method.GET (Choku.Request_head.meth head));
+    Choku.Request_body_mode.Buffered
+  in
+  let response =
+    with_selector_server ~request_body_mode
+      (fun req -> Choku.Response.text (Choku.Request.path req ^ "\n"))
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "GET /one HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let first = read_response reader in
+        Eio.Flow.copy_string "GET /two HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check int "selector calls" 2 !selector_calls;
+  check bool "first response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\n/one\n" response);
+  check bool "second response" true (String.ends_with ~suffix:"/two\n" response)
+
+let test_run_selector_exception_500_closes () =
+  require_network ();
+  let response =
+    with_selector_server
+      ~request_body_mode:(fun _ -> failwith "selector failed")
+      (fun _ -> Choku.Response.text "unexpected\n")
+      (fun flow ->
+        Eio.Flow.copy_string
+          "GET /boom HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n\
+           GET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check bool "500" true
+    (String.starts_with ~prefix:"HTTP/1.1 500 Internal Server Error" response);
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n" response);
+  check bool "does not process next request" false
+    (contains_sub ~needle:"unexpected" response)
+
+let test_run_selector_head_exception_suppresses_body () =
+  require_network ();
+  let response =
+    with_selector_server
+      ~request_body_mode:(fun _ -> failwith "selector failed")
+      (fun _ -> Choku.Response.text "unexpected\n")
+      (request "HEAD /boom HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "500" true
+    (String.starts_with ~prefix:"HTTP/1.1 500 Internal Server Error" response);
+  check bool "no 500 body" false
+    (contains_sub ~needle:"\r\n\r\nInternal Server Error\n" response)
+
+let test_run_selector_not_invoked_for_invalid_framing () =
+  require_network ();
+  let selector_calls = ref 0 in
+  let response =
+    with_selector_server
+      ~request_body_mode:(fun _ ->
+        incr selector_calls;
+        Choku.Request_body_mode.Buffered)
+      (fun _ -> Choku.Response.text "unexpected\n")
+      (request
+         "POST /upload HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: gzip\r\n\
+          \r\n")
+  in
+  check int "selector calls" 0 !selector_calls;
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
 let test_run_handler_exception () =
   require_network ();
   let response =
@@ -1600,6 +1799,11 @@ let () =
             test_create_router_applies_middleware;
           test_case "create router handle uses existing request body" `Quick
             test_create_router_handle_uses_existing_request_body;
+          test_case
+            "create with request body selector handle uses existing request \
+             body"
+            `Quick
+            test_create_with_request_body_selector_handle_uses_existing_request_body;
           test_case "default max body size" `Quick
             test_default_max_request_body_size;
           test_case "create rejects invalid request head limits" `Quick
@@ -1712,6 +1916,18 @@ let () =
             test_run_streaming_multipart_malformed_body;
           test_case "run router streaming multipart upload" `Quick
             test_run_router_streaming_multipart_upload;
+          test_case "run selector chooses buffered or streaming by path" `Quick
+            test_run_selector_chooses_buffered_or_streaming_by_path;
+          test_case "run selector can inspect method and headers" `Quick
+            test_run_selector_can_inspect_method_and_headers;
+          test_case "run selector runs once per keep-alive request" `Quick
+            test_run_selector_runs_once_per_keep_alive_request;
+          test_case "run selector exception 500 closes" `Quick
+            test_run_selector_exception_500_closes;
+          test_case "run selector HEAD exception suppresses body" `Quick
+            test_run_selector_head_exception_suppresses_body;
+          test_case "run selector not invoked for invalid framing" `Quick
+            test_run_selector_not_invoked_for_invalid_framing;
           test_case "run handler exception" `Quick test_run_handler_exception;
         ] );
     ]

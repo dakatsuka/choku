@@ -10,6 +10,7 @@
   test_multipart
   test_handler
   test_middleware
+  test_request_head
   test_router
   test_http1
   test_server)
