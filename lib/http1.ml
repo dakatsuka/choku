@@ -1,3 +1,5 @@
+[@@@alert "-internal"]
+
 type error =
   | Invalid_request_line
   | Unsupported_http_version
@@ -191,14 +193,25 @@ let parse_request_string
               | Error Http1_chunked.Body_too_large -> Error Body_too_large
               | Error Http1_chunked.Malformed -> Error Malformed_chunked_body)))
 
-let serialize_response ?(include_body = true) ?(connection = "close") response =
-  let body = Response.body response |> Body.to_string in
-  let headers =
-    Response.headers response
-    |> Headers.set "content-length" (string_of_int (String.length body))
-    |> Headers.set "connection" connection
-  in
-  let status = Response.status response in
+type write_error = Response_body_write_failed
+
+exception Response_body_length_mismatch
+
+let body_forbidden_status status =
+  match Status.class_ status with
+  | Informational -> true
+  | Successful | Redirection | Client_error | Server_error ->
+      let code = Status.code status in
+      code = 204 || code = 304
+
+let response_framing_headers headers =
+  headers
+  |> Headers.remove "content-length"
+  |> Headers.remove "transfer-encoding"
+  |> Headers.remove "connection"
+
+let response_head_string ~connection status headers =
+  let headers = Headers.set "connection" connection headers in
   let status_line =
     Printf.sprintf "HTTP/1.1 %d %s\r\n" (Status.code status)
       (Status.reason status)
@@ -208,7 +221,123 @@ let serialize_response ?(include_body = true) ?(connection = "close") response =
     |> List.map (fun (name, value) -> name ^ ": " ^ value ^ "\r\n")
     |> String.concat ""
   in
-  status_line ^ header_lines ^ "\r\n" ^ if include_body then body else ""
+  status_line ^ header_lines ^ "\r\n"
+
+let serialize_response ?(include_body = true) ?(connection = "close") response =
+  let status = Response.status response in
+  let body_forbidden = body_forbidden_status status in
+  let body = Response.body response |> Body.to_string in
+  let headers =
+    Response.headers response |> response_framing_headers |> fun headers ->
+    if body_forbidden then headers
+    else
+      Headers.set "content-length" (string_of_int (String.length body)) headers
+  in
+  response_head_string ~connection status headers
+  ^ if include_body && not body_forbidden then body else ""
+
+let cstructs_length =
+  List.fold_left (fun length buffer -> length + Cstruct.length buffer) 0
+
+let write_cstructs flow buffers =
+  List.iter
+    (fun buffer ->
+      if Cstruct.length buffer > 0 then
+        Eio.Flow.copy_string (Cstruct.to_string buffer) flow)
+    buffers
+
+type fixed_length_sink = {
+  flow : Eio.Flow.sink_ty Eio.Resource.t;
+  mutable remaining : int;
+}
+
+module Fixed_length_sink = struct
+  type t = fixed_length_sink
+
+  let single_write t buffers =
+    let length = cstructs_length buffers in
+    if length > t.remaining then raise Response_body_length_mismatch;
+    write_cstructs t.flow buffers;
+    t.remaining <- t.remaining - length;
+    length
+
+  let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+end
+
+let fixed_length_sink flow content_length =
+  let sink = { flow; remaining = content_length } in
+  (sink, Eio.Resource.T (sink, Eio.Flow.Pi.sink (module Fixed_length_sink)))
+
+module Chunked_sink = struct
+  type t = Eio.Flow.sink_ty Eio.Resource.t
+
+  let single_write flow buffers =
+    let length = cstructs_length buffers in
+    if length > 0 then (
+      Eio.Flow.copy_string (Printf.sprintf "%x\r\n" length) flow;
+      write_cstructs flow buffers;
+      Eio.Flow.copy_string "\r\n" flow);
+    length
+
+  let copy t ~src = Eio.Flow.Pi.simple_copy ~single_write t ~src
+end
+
+let chunked_sink flow =
+  Eio.Resource.T (flow, Eio.Flow.Pi.sink (module Chunked_sink))
+
+let response_body_headers response body_view =
+  let headers = Response.headers response |> response_framing_headers in
+  if body_forbidden_status (Response.status response) then headers
+  else
+    match body_view with
+    | Body.Internal.Buffered body ->
+        Headers.set "content-length"
+          (string_of_int (String.length body))
+          headers
+    | Body.Internal.Source { content_length = Some length; _ }
+    | Body.Internal.Writer { content_length = Some length; _ } ->
+        Headers.set "content-length" (string_of_int length) headers
+    | Body.Internal.Source { content_length = None; _ }
+    | Body.Internal.Writer { content_length = None; _ } ->
+        Headers.set "transfer-encoding" "chunked" headers
+
+let write_fixed_length_body flow content_length write =
+  let raw_sink, sink = fixed_length_sink flow content_length in
+  write sink;
+  if raw_sink.remaining <> 0 then raise Response_body_length_mismatch
+
+let write_chunked_body flow write =
+  write (chunked_sink flow);
+  Eio.Flow.copy_string "0\r\n\r\n" flow
+
+let write_response_exn ~include_body ~connection flow response =
+  let body_view = Body.Internal.view (Response.body response) in
+  let headers = response_body_headers response body_view in
+  Eio.Flow.copy_string
+    (response_head_string ~connection (Response.status response) headers)
+    flow;
+  if include_body && not (body_forbidden_status (Response.status response)) then
+    match body_view with
+    | Body.Internal.Buffered body -> Eio.Flow.copy_string body flow
+    | Body.Internal.Source { content_length = Some content_length; with_source }
+      ->
+        write_fixed_length_body flow content_length (fun sink ->
+            with_source (fun source -> Eio.Flow.copy source sink))
+    | Body.Internal.Writer { content_length = Some content_length; write } ->
+        write_fixed_length_body flow content_length write
+    | Body.Internal.Source { content_length = None; with_source } ->
+        write_chunked_body flow (fun sink ->
+            with_source (fun source -> Eio.Flow.copy source sink))
+    | Body.Internal.Writer { content_length = None; write } ->
+        write_chunked_body flow write
+
+let write_response ~include_body ~connection flow response =
+  try
+    write_response_exn ~include_body ~connection flow response;
+    Ok ()
+  with
+  | Eio.Cancel.Cancelled _ as exn -> raise exn
+  | _ -> Error Response_body_write_failed
 
 let plain_error status body =
   Response.text ~status body |> Response.with_header "connection" "close"

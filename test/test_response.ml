@@ -31,6 +31,25 @@ let test_with_header_rejects_injection () =
          |> Choku.Response.with_header "x-test" "ok\r\nInjected: yes"
           : Choku.Response.t))
 
+let test_stream_response () =
+  let response =
+    Choku.Response.stream ~content_length:5 (fun sink ->
+        Eio.Flow.copy_string "hello" sink)
+  in
+  check int "status" 200 (Choku.Status.code (Choku.Response.status response));
+  check bool "stream body" false
+    (Choku.Body.is_buffered (Choku.Response.body response));
+  check_raises "streaming body cannot be read"
+    (Invalid_argument "streaming body cannot be read with Body.to_string")
+    (fun () -> ignore (Choku.Body.to_string (Choku.Response.body response)))
+
+let test_stream_rejects_negative_content_length () =
+  check_raises "negative content length"
+    (Invalid_argument "negative content_length") (fun () ->
+      ignore
+        (Choku.Response.stream ~content_length:(-1) (fun _ -> ())
+          : Choku.Response.t))
+
 let () =
   run "response"
     [
@@ -40,5 +59,8 @@ let () =
           test_case "with_header uses set" `Quick test_with_header_sets;
           test_case "with_header rejects injection" `Quick
             test_with_header_rejects_injection;
+          test_case "stream response" `Quick test_stream_response;
+          test_case "stream rejects negative content length" `Quick
+            test_stream_rejects_negative_content_length;
         ] );
     ]

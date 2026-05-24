@@ -346,11 +346,14 @@ let response_requests_close response =
   header_has_connection_token "close" (Response.headers response)
 
 let write_response ?(include_body = true) ?(connection = Close) flow response =
-  Eio.Flow.copy_string
-    (Http1.serialize_response ~include_body
-       ~connection:(connection_header_value connection)
-       response)
-    flow
+  let flow = (flow :> Eio.Flow.sink_ty Eio.Resource.t) in
+  match
+    Http1.write_response ~include_body
+      ~connection:(connection_header_value connection)
+      flow response
+  with
+  | Ok () -> true
+  | Error Http1.Response_body_write_failed -> false
 
 let decide_connection t request request_body_mode response handler_failed =
   if
@@ -366,11 +369,16 @@ let handle_connection ?mono_clock t flow =
     match read_request ?mono_clock t reader with
     | Read_end_of_connection -> ()
     | Read_error error ->
-        write_response ~connection:Close flow (Http1.response_for_error error)
+        ignore
+          (write_response ~connection:Close flow
+             (Http1.response_for_error error)
+            : bool)
     | Read_selector_failed meth ->
         let include_body = not (Method.equal meth Method.HEAD) in
-        write_response ~include_body ~connection:Close flow
-          default_internal_error
+        ignore
+          (write_response ~include_body ~connection:Close flow
+             default_internal_error
+            : bool)
     | Read_request (request, request_body_mode) ->
         let handler_failed = ref false in
         let response =
@@ -392,8 +400,8 @@ let handle_connection ?mono_clock t flow =
         let connection =
           decide_connection t request request_body_mode response !handler_failed
         in
-        write_response ~include_body ~connection flow response;
-        if connection = Keep_open then loop ()
+        let wrote = write_response ~include_body ~connection flow response in
+        if wrote && connection = Keep_open then loop ()
   in
   loop ();
   Eio.Flow.shutdown flow `All

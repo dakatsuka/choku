@@ -20,6 +20,12 @@ val set : string -> string -> t -> t
     @raise Invalid_argument
       if [name] is not a valid HTTP field name or [value] contains CR or LF. *)
 
+val remove : string -> t -> t
+(** [remove name headers] removes all fields whose names match [name]
+    case-insensitively.
+
+    @raise Invalid_argument if [name] is not a valid HTTP field name. *)
+
 val get : string -> t -> string option
 (** [get name headers] returns the first matching value in insertion order. *)
 

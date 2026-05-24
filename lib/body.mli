@@ -81,6 +81,20 @@ val pp_error : Format.formatter -> error -> unit
 (**/**)
 
 module Internal : sig
+  type view =
+    | Buffered of string
+    | Source of {
+        content_length : int option;
+        with_source : 'a. (Eio.Flow.source_ty Eio.Resource.t -> 'a) -> 'a;
+      }
+    | Writer of {
+        content_length : int option;
+        write : Eio.Flow.sink_ty Eio.Resource.t -> unit;
+      }
+
+  val view : t -> view
+  [@@alert internal "Choku internal API; do not use outside the library."]
+
   val streaming : ?content_length:int -> Eio.Flow.source_ty Eio.Resource.t -> t
   [@@alert internal "Choku internal API; do not use outside the library."]
   (** [streaming ?content_length source] creates a single-consumption body
@@ -88,6 +102,12 @@ module Internal : sig
 
       When [content_length] is provided, [source] must produce at most
       [content_length] bytes and then report end-of-file. *)
+
+  val writer :
+    ?content_length:int -> (Eio.Flow.sink_ty Eio.Resource.t -> unit) -> t
+  [@@alert internal "Choku internal API; do not use outside the library."]
+  (** [writer ?content_length write] creates a single-consumption body backed by
+      [write]. *)
 end
 
 (**/**)

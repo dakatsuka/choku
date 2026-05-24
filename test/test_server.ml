@@ -243,9 +243,71 @@ let response_content_length head =
           else None)
   |> Option.value ~default:0
 
+let response_is_chunked head =
+  head |> String.split_on_char '\n'
+  |> List.exists (fun line ->
+      let line =
+        if
+          String.length line > 0
+          && Char.equal line.[String.length line - 1] '\r'
+        then String.sub line 0 (String.length line - 1)
+        else line
+      in
+      match String.index_opt line ':' with
+      | None -> false
+      | Some index ->
+          let name = String.sub line 0 index |> String.lowercase_ascii in
+          let value =
+            String.sub line (index + 1) (String.length line - index - 1)
+            |> String.trim |> String.lowercase_ascii
+          in
+          String.equal name "transfer-encoding" && String.equal value "chunked")
+
+let take_until_crlf reader =
+  let rec loop () =
+    match String.index_opt reader.buffered '\n' with
+    | Some index ->
+        let line_end = index + 1 in
+        let line = String.sub reader.buffered 0 line_end in
+        reader.buffered <-
+          String.sub reader.buffered line_end
+            (String.length reader.buffered - line_end);
+        line
+    | None ->
+        let scratch = Cstruct.create 128 in
+        let read = Eio.Flow.single_read reader.flow scratch in
+        reader.buffered <-
+          reader.buffered ^ Cstruct.to_string (Cstruct.sub scratch 0 read);
+        loop ()
+  in
+  loop ()
+
+let read_chunked_body reader =
+  let buffer = Buffer.create 128 in
+  let rec loop () =
+    let size_line = take_until_crlf reader in
+    Buffer.add_string buffer size_line;
+    let size_text =
+      String.sub size_line 0 (String.length size_line - 2)
+      |> String.split_on_char ';' |> List.hd |> String.trim
+    in
+    let size = int_of_string ("0x" ^ size_text) in
+    if size = 0 then
+      let trailer_end = take_from_reader reader 2 in
+      Buffer.add_string buffer trailer_end
+    else
+      let chunk = take_from_reader reader (size + 2) in
+      Buffer.add_string buffer chunk;
+      loop ()
+  in
+  loop ();
+  Buffer.contents buffer
+
 let read_response ?(include_body = true) reader =
   let head = read_until_header_end reader in
-  if include_body then
+  if include_body && response_is_chunked head then
+    head ^ read_chunked_body reader
+  else if include_body then
     let body = take_from_reader reader (response_content_length head) in
     head ^ body
   else head
@@ -1778,6 +1840,233 @@ let test_run_selector_not_invoked_for_invalid_framing () =
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
 
+let test_run_streaming_response_known_length () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream ~content_length:8 (fun sink ->
+            Eio.Flow.copy_string "pingpong" sink))
+      (request "GET /download HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "content-length" true
+    (contains_sub ~needle:"content-length: 8\r\n" response);
+  check bool "no transfer-encoding" false
+    (contains_sub ~needle:"transfer-encoding:" response);
+  check bool "body" true (String.ends_with ~suffix:"pingpong" response)
+
+let test_run_streaming_response_unknown_length_chunked () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream (fun sink ->
+            Eio.Flow.copy_string "ping" sink;
+            Eio.Flow.copy_string "pong" sink))
+      (request "GET /download HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "transfer-encoding" true
+    (contains_sub ~needle:"transfer-encoding: chunked\r\n" response);
+  check bool "no content-length" false
+    (contains_sub ~needle:"content-length:" response);
+  check bool "chunks" true
+    (String.ends_with ~suffix:"4\r\nping\r\n4\r\npong\r\n0\r\n\r\n" response)
+
+let test_run_streaming_response_replaces_framing_headers () =
+  require_network ();
+  let headers =
+    Choku.Headers.empty
+    |> Choku.Headers.set "content-length" "999"
+    |> Choku.Headers.set "transfer-encoding" "gzip"
+  in
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream ~headers (fun sink ->
+            Eio.Flow.copy_string "data" sink))
+      (request "GET /download HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "chunked" true
+    (contains_sub ~needle:"transfer-encoding: chunked\r\n" response);
+  check bool "content-length removed" false
+    (contains_sub ~needle:"content-length:" response);
+  check bool "gzip removed" false (contains_sub ~needle:"gzip" response)
+
+let test_run_head_streaming_response_does_not_invoke_writer () =
+  require_network ();
+  let writer_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream (fun sink ->
+            writer_ran := true;
+            Eio.Flow.copy_string "unexpected" sink))
+      (request "HEAD /download HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "writer not run" false !writer_ran;
+  check bool "chunked header" true
+    (contains_sub ~needle:"transfer-encoding: chunked\r\n" response);
+  check bool "no chunks" false
+    (contains_sub ~needle:"\r\n\r\n0\r\n\r\n" response);
+  check bool "no body" false (contains_sub ~needle:"unexpected" response)
+
+let test_run_head_known_length_streaming_response_does_not_invoke_writer () =
+  require_network ();
+  let writer_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream ~content_length:10 (fun sink ->
+            writer_ran := true;
+            Eio.Flow.copy_string "unexpected" sink))
+      (request "HEAD /download HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "writer not run" false !writer_ran;
+  check bool "content-length" true
+    (contains_sub ~needle:"content-length: 10\r\n" response);
+  check bool "no transfer-encoding" false
+    (contains_sub ~needle:"transfer-encoding:" response);
+  check bool "no body" false (contains_sub ~needle:"unexpected" response)
+
+let test_run_no_content_streaming_response_does_not_invoke_writer () =
+  require_network ();
+  let writer_ran = ref false in
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.stream ~status:Choku.Status.no_content (fun sink ->
+            writer_ran := true;
+            Eio.Flow.copy_string "unexpected" sink))
+      (request "GET /empty HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "204" true
+    (String.starts_with ~prefix:"HTTP/1.1 204 No Content" response);
+  check bool "writer not run" false !writer_ran;
+  check bool "no content-length" false
+    (contains_sub ~needle:"content-length:" response);
+  check bool "no transfer-encoding" false
+    (contains_sub ~needle:"transfer-encoding:" response);
+  check bool "no body" true (String.ends_with ~suffix:"\r\n\r\n" response)
+
+let test_run_keep_alive_after_successful_streaming_response () =
+  require_network ();
+  let response =
+    with_server
+      (fun req ->
+        Choku.Response.stream (fun sink ->
+            Eio.Flow.copy_string (Choku.Request.path req ^ "\n") sink))
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "GET /one HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let first = read_response reader in
+        Eio.Flow.copy_string "GET /two HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "first keep-alive" true
+    (contains_sub ~needle:"connection: keep-alive\r\n" response);
+  check bool "first chunk" true
+    (contains_sub ~needle:"5\r\n/one\n\r\n0\r\n\r\n" response);
+  check bool "second chunk" true
+    (String.ends_with ~suffix:"5\r\n/two\n\r\n0\r\n\r\n" response)
+
+let test_run_streaming_response_failure_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun req ->
+        if String.equal (Choku.Request.path req) "/boom" then
+          Choku.Response.stream (fun sink ->
+              Eio.Flow.copy_string "part" sink;
+              failwith "boom")
+        else Choku.Response.text "next\n")
+      (fun flow ->
+        Eio.Flow.copy_string
+          "GET /boom HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n\
+           GET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check bool "partial chunk" true
+    (contains_sub ~needle:"4\r\npart\r\n" response);
+  check bool "no terminator" false (contains_sub ~needle:"0\r\n\r\n" response);
+  check bool "second request not processed" false
+    (contains_sub ~needle:"next\n" response)
+
+let test_run_streaming_response_known_length_underflow_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun req ->
+        if String.equal (Choku.Request.path req) "/short" then
+          Choku.Response.stream ~content_length:8 (fun sink ->
+              Eio.Flow.copy_string "tiny" sink)
+        else Choku.Response.text "next\n")
+      (fun flow ->
+        Eio.Flow.copy_string
+          "GET /short HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n\
+           GET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check bool "declared length" true
+    (contains_sub ~needle:"content-length: 8\r\n" response);
+  check bool "partial body" true (String.ends_with ~suffix:"tiny" response);
+  check bool "second request not processed" false
+    (contains_sub ~needle:"next\n" response)
+
+let test_run_streaming_response_known_length_overflow_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun req ->
+        if String.equal (Choku.Request.path req) "/long" then
+          Choku.Response.stream ~content_length:4 (fun sink ->
+              Eio.Flow.copy_string "toolong" sink)
+        else Choku.Response.text "next\n")
+      (fun flow ->
+        Eio.Flow.copy_string
+          "GET /long HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n\
+           GET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check bool "declared length" true
+    (contains_sub ~needle:"content-length: 4\r\n" response);
+  check bool "overflow body not written" false
+    (contains_sub ~needle:"toolong" response);
+  check bool "second request not processed" false
+    (contains_sub ~needle:"next\n" response)
+
 let test_run_handler_exception () =
   require_network ();
   let response =
@@ -1928,6 +2217,28 @@ let () =
             test_run_selector_head_exception_suppresses_body;
           test_case "run selector not invoked for invalid framing" `Quick
             test_run_selector_not_invoked_for_invalid_framing;
+          test_case "run streaming response known length" `Quick
+            test_run_streaming_response_known_length;
+          test_case "run streaming response unknown length chunked" `Quick
+            test_run_streaming_response_unknown_length_chunked;
+          test_case "run streaming response replaces framing headers" `Quick
+            test_run_streaming_response_replaces_framing_headers;
+          test_case "run HEAD streaming response does not invoke writer" `Quick
+            test_run_head_streaming_response_does_not_invoke_writer;
+          test_case
+            "run HEAD known-length streaming response does not invoke writer"
+            `Quick
+            test_run_head_known_length_streaming_response_does_not_invoke_writer;
+          test_case "run no-content streaming response does not invoke writer"
+            `Quick test_run_no_content_streaming_response_does_not_invoke_writer;
+          test_case "run keep-alive after successful streaming response" `Quick
+            test_run_keep_alive_after_successful_streaming_response;
+          test_case "run streaming response failure closes" `Quick
+            test_run_streaming_response_failure_closes;
+          test_case "run streaming response known length underflow closes"
+            `Quick test_run_streaming_response_known_length_underflow_closes;
+          test_case "run streaming response known length overflow closes" `Quick
+            test_run_streaming_response_known_length_overflow_closes;
           test_case "run handler exception" `Quick test_run_handler_exception;
         ] );
     ]

@@ -237,6 +237,20 @@ let server =
     ()
 ```
 
+Stream large or generated responses without buffering the whole body:
+
+```ocaml
+let download _request =
+  let open Choku in
+  Response.stream
+    ~headers:(Headers.set "content-type" "application/octet-stream" Headers.empty)
+    (fun sink ->
+      List.iter (fun chunk -> Eio.Flow.copy_string chunk sink) chunks)
+```
+
+When `~content_length` is omitted, Choku uses HTTP/1.1 chunked transfer coding.
+If the length is known, pass `~content_length:n` and write exactly `n` bytes.
+
 The repository includes runnable examples:
 
 ```sh

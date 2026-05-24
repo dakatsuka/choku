@@ -30,6 +30,10 @@ let set name value headers =
   headers |> List.filter (fun (existing, _) -> not (same_name existing name))
   |> fun headers -> headers @ [ (name, value) ]
 
+let remove name headers =
+  if not (is_valid_name name) then invalid_arg "invalid HTTP header name";
+  headers |> List.filter (fun (existing, _) -> not (same_name existing name))
+
 let get name headers =
   headers
   |> List.find_opt (fun (existing, _) -> same_name existing name)

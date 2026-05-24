@@ -51,6 +51,22 @@ val serialize_response :
     [Content-Length] still reflects [response]'s body, but no body bytes are
     appended. *)
 
+type write_error = Response_body_write_failed
+
+val write_response :
+  include_body:bool ->
+  connection:string ->
+  Eio.Flow.sink_ty Eio.Resource.t ->
+  Response.t ->
+  (unit, write_error) result
+(** [write_response ~include_body ~connection flow response] writes [response]
+    to [flow] using HTTP/1.1 framing.
+
+    Buffered responses and known-length streaming responses use
+    [Content-Length]. Unknown-length streaming responses use
+    [Transfer-Encoding: chunked]. Non-cancellation write errors return
+    [Error Response_body_write_failed]. *)
+
 val response_for_error : error -> Response.t
 (** [response_for_error error] returns the HTTP/1.1 error response for a request
     parsing or reading failure. *)

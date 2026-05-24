@@ -43,6 +43,7 @@ None.
 - [Design Response Streaming](completed/0028-design-response-streaming.md)
 - [Design Generic Pre-Body Selector](completed/0029-design-generic-pre-body-selector.md)
 - [Implement Generic Pre-Body Selector](completed/0030-implement-generic-pre-body-selector.md)
+- [Implement Response Streaming](completed/0031-implement-response-streaming.md)
 
 ## When To Create A Plan
 
