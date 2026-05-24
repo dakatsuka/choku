@@ -7,8 +7,6 @@ IO.
 
 The name "Choku" means "direct" in Japanese.
 
-> A pure Eio HTTP server for OCaml 5.
-
 ## Status
 
 Choku is in early design and implementation. The first implementation
