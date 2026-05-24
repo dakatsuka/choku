@@ -6,6 +6,7 @@ Product specs define externally visible behavior and user expectations.
 
 - [Minimal HTTP/1.1 Server Milestone](minimal-http1-server.md)
 - [HTTP/1.1 Persistent Connections](http1-persistent-connections.md)
+- [Router HEAD And 405 Semantics](router-head-and-405.md)
 - [Minimal Router DSL](minimal-router-dsl.md)
 - [Multipart Form-Data Support](multipart-form-data.md)
 - [Minimal Server API](minimal-server-api.md)

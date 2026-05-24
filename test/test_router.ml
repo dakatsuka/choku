@@ -9,6 +9,9 @@ let request ?(meth = Choku.Method.GET) target =
 let response_body response = Choku.Body.to_string (Choku.Response.body response)
 let response_code response = Choku.Status.code (Choku.Response.status response)
 
+let response_header name response =
+  Choku.Headers.get name (Choku.Response.headers response)
+
 let call router ?meth target =
   Choku.Router.to_handler router (request ?meth target)
 
@@ -36,8 +39,54 @@ let test_unused_route_arguments_can_be_underscores () =
 let test_method_must_match () =
   let router = Choku.Router.empty |> Choku.Router.post "/submit" (text "ok") in
   let response = call router "/submit" in
-  check int "status" 404 (response_code response);
-  check string "body" "Not Found\n" (response_body response)
+  check int "status" 405 (response_code response);
+  check (option string) "allow" (Some "POST") (response_header "allow" response);
+  check string "body" "Method Not Allowed\n" (response_body response)
+
+let test_head_falls_back_to_get () =
+  let seen_method = ref None in
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _params request ->
+        seen_method := Some (Choku.Request.meth request);
+        Choku.Response.text "ok")
+  in
+  let response = call router ~meth:Choku.Method.HEAD "/health" in
+  check int "status" 200 (response_code response);
+  check string "body" "ok" (response_body response);
+  check
+    (option (of_pp Choku.Method.pp))
+    "method" (Some Choku.Method.HEAD) !seen_method
+
+let test_explicit_head_wins_over_get_fallback () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (text "get")
+    |> Choku.Router.route Choku.Method.HEAD "/health" (text "head")
+  in
+  check string "head" "head"
+    (response_body (call router ~meth:Choku.Method.HEAD "/health"));
+  check string "get" "get" (response_body (call router "/health"))
+
+let test_explicit_head_static_wins_over_get_param_fallback () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/:name" (text "get-param")
+    |> Choku.Router.route Choku.Method.HEAD "/health" (text "head-static")
+  in
+  check string "head" "head-static"
+    (response_body (call router ~meth:Choku.Method.HEAD "/health"))
+
+let test_head_fallback_uses_get_params () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/users/:id" (fun params _request ->
+        Choku.Response.text
+          (Option.value ~default:"missing"
+             (Choku.Router.Params.get "id" params)))
+  in
+  check string "param" "42"
+    (response_body (call router ~meth:Choku.Method.HEAD "/users/42"))
 
 let test_first_registered_route_wins () =
   let router =
@@ -81,6 +130,11 @@ let test_query_string_is_ignored () =
   let router = Choku.Router.empty |> Choku.Router.get "/search" (text "ok") in
   check string "body" "ok" (response_body (call router "/search?q=choku"))
 
+let test_head_fallback_ignores_query_string () =
+  let router = Choku.Router.empty |> Choku.Router.get "/search" (text "ok") in
+  check string "body" "ok"
+    (response_body (call router ~meth:Choku.Method.HEAD "/search?q=choku"))
+
 let test_custom_not_found () =
   let router =
     Choku.Router.empty
@@ -122,6 +176,51 @@ let test_generic_route_supports_custom_method () =
   in
   check string "body" "custom" (response_body (call router ~meth "/collection"))
 
+let test_method_not_allowed_allow_header_order () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/resource" (text "get")
+    |> Choku.Router.post "/resource" (text "post")
+    |> Choku.Router.route Choku.Method.HEAD "/resource" (text "head")
+    |> Choku.Router.get "/resource" (text "duplicate-get")
+  in
+  let response = call router ~meth:Choku.Method.PUT "/resource" in
+  check int "status" 405 (response_code response);
+  check (option string) "allow" (Some "GET, HEAD, POST")
+    (response_header "allow" response)
+
+let test_method_not_allowed_explicit_head_before_get_order () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.route Choku.Method.HEAD "/resource" (text "head")
+    |> Choku.Router.get "/resource" (text "get")
+  in
+  let response = call router ~meth:Choku.Method.POST "/resource" in
+  check (option string) "allow" (Some "HEAD, GET")
+    (response_header "allow" response)
+
+let test_method_not_allowed_custom_method_allow_header () =
+  let meth = Choku.Method.Other "PROPFIND" in
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.route meth "/collection" (text "custom")
+    |> Choku.Router.get "/collection" (text "get")
+  in
+  let response = call router ~meth:Choku.Method.DELETE "/collection" in
+  check (option string) "allow" (Some "PROPFIND, GET, HEAD")
+    (response_header "allow" response)
+
+let test_not_found_still_handles_path_miss () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (text "ok")
+    |> Choku.Router.not_found (fun _request ->
+        Choku.Response.text ~status:Choku.Status.bad_request "missing")
+  in
+  let response = call router ~meth:Choku.Method.POST "/missing" in
+  check int "status" 400 (response_code response);
+  check string "body" "missing" (response_body response)
+
 let test_route_body_mode_defaults_to_buffered () =
   let router = Choku.Router.empty |> Choku.Router.post "/upload" (text "ok") in
   check (option body_mode) "body mode" (Some Choku.Request_body_mode.Buffered)
@@ -154,6 +253,25 @@ let test_route_body_mode_requires_method_match () =
          "/upload" (text "ok")
   in
   check (option body_mode) "body mode" None (matched_body_mode "/upload" router)
+
+let test_route_body_mode_head_falls_back_to_get () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/download" (text "ok")
+  in
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
+    (matched_body_mode ~meth:Choku.Method.HEAD "/download" router)
+
+let test_route_body_mode_explicit_head_wins () =
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/download" (text "get")
+    |> Choku.Router.route Choku.Method.HEAD "/download" (text "head")
+  in
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Buffered)
+    (matched_body_mode ~meth:Choku.Method.HEAD "/download" router)
 
 let test_internal_match_route_does_not_invoke_handler () =
   let handler_started = ref 0 in
@@ -188,6 +306,13 @@ let () =
           test_case "unused route arguments can be underscores" `Quick
             test_unused_route_arguments_can_be_underscores;
           test_case "method must match" `Quick test_method_must_match;
+          test_case "HEAD falls back to GET" `Quick test_head_falls_back_to_get;
+          test_case "explicit HEAD wins over GET fallback" `Quick
+            test_explicit_head_wins_over_get_fallback;
+          test_case "explicit HEAD static wins over GET param fallback" `Quick
+            test_explicit_head_static_wins_over_get_param_fallback;
+          test_case "HEAD fallback uses GET params" `Quick
+            test_head_fallback_uses_get_params;
           test_case "first registered route wins" `Quick
             test_first_registered_route_wins;
           test_case "parameter capture" `Quick test_parameter_capture;
@@ -195,12 +320,22 @@ let () =
             test_params_to_list_preserves_pattern_order;
           test_case "query string is ignored" `Quick
             test_query_string_is_ignored;
+          test_case "HEAD fallback ignores query string" `Quick
+            test_head_fallback_ignores_query_string;
           test_case "custom not found" `Quick test_custom_not_found;
           test_case "root route matches only root" `Quick
             test_root_route_matches_only_root;
           test_case "convenience methods" `Quick test_convenience_methods;
           test_case "generic route supports custom method" `Quick
             test_generic_route_supports_custom_method;
+          test_case "method not allowed Allow header order" `Quick
+            test_method_not_allowed_allow_header_order;
+          test_case "method not allowed explicit HEAD before GET order" `Quick
+            test_method_not_allowed_explicit_head_before_get_order;
+          test_case "method not allowed custom method Allow header" `Quick
+            test_method_not_allowed_custom_method_allow_header;
+          test_case "not found still handles path miss" `Quick
+            test_not_found_still_handles_path_miss;
           test_case "route body mode defaults to buffered" `Quick
             test_route_body_mode_defaults_to_buffered;
           test_case "route body mode can be streaming" `Quick
@@ -209,6 +344,10 @@ let () =
             test_route_body_mode_uses_first_matching_route;
           test_case "route body mode requires method match" `Quick
             test_route_body_mode_requires_method_match;
+          test_case "route body mode HEAD falls back to GET" `Quick
+            test_route_body_mode_head_falls_back_to_get;
+          test_case "route body mode explicit HEAD wins" `Quick
+            test_route_body_mode_explicit_head_wins;
           test_case "internal match route does not invoke handler" `Quick
             test_internal_match_route_does_not_invoke_handler;
           test_case "invalid patterns" `Quick test_invalid_patterns;

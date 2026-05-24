@@ -98,6 +98,10 @@ let server =
   Server.create ~handler:(Router.to_handler router) ()
 ```
 
+The router automatically handles `HEAD` requests with matching `GET` routes
+unless an explicit `HEAD` route exists. If a path exists but the request method
+is not allowed, it returns `405 Method Not Allowed` with an `Allow` header.
+
 For router-backed servers, individual routes can opt into streaming request
 bodies while other routes stay buffered:
 

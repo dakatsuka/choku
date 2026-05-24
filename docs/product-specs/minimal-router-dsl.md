@@ -24,8 +24,6 @@ without making routing mandatory for the server.
 
 - Regular expression route patterns.
 - Host, scheme, header, query-string, or body-based routing.
-- Automatic `HEAD` handling for `GET` routes.
-- Automatic `405 Method Not Allowed` responses.
 - Route groups, nested routers, mounts, filters, or per-route middleware.
 - URL generation.
 - Percent-decoding or path normalization.
@@ -50,6 +48,11 @@ without making routing mandatory for the server.
   when the application uses `Server.create_router`. `Router.to_handler`
   behavior remains useful for tests and server-wide body mode users with
   already-constructed requests.
+- `HEAD` requests automatically fall back to matching `GET` routes unless an
+  explicit `HEAD` route matches first.
+- Path matches with disallowed methods return `405 Method Not Allowed` with an
+  `Allow` header as specified by
+  [Router HEAD And 405 Semantics](router-head-and-405.md).
 - Missing routes return a configurable not-found handler, defaulting to `404 Not
   Found` with a text body.
 - Invalid route patterns raise `Invalid_argument` during route registration.
@@ -136,8 +139,6 @@ let server = Choku.Server.create_router router
 ## Open Questions
 
 - Should a later router milestone add regex segments or typed path converters?
-- Should a later router milestone provide automatic `HEAD` or `405 Method Not
-  Allowed` behavior?
 - Should percent-decoding happen in `Request.path`, in `Router`, or in a future
   URI module?
 - Should a later router milestone support trailing-slash routes or repeated

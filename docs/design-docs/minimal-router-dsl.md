@@ -31,7 +31,6 @@ regex paths, typed converters, route groups, and per-route middleware later.
 - Adding regex matching, typed parameters, mounts, route groups, or per-route
   middleware.
 - Adding URI parsing, percent-decoding, normalization, or query routing.
-- Adding 405 generation or automatic `HEAD` fallback.
 
 ## Proposed Design
 
@@ -165,8 +164,9 @@ are rejected at pattern compile time.
 - Add regex paths immediately: rejected because regular expression syntax,
   capture naming, dependency choice, and performance behavior deserve a
   separate design.
-- Generate 405 responses when a path matches another method: deferred to avoid
-  committing to method-table behavior before route introspection exists.
+- Add automatic `HEAD` fallback and 405 behavior in the initial router: deferred
+  to keep the first router milestone focused. Later specified by
+  [Router HEAD And 405 Semantics](router-head-and-405.md).
 
 ## Third-Party Review
 

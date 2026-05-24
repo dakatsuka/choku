@@ -38,6 +38,7 @@ None.
 - [Tighten HTTP/1.1 Request Semantics](completed/0023-tighten-http1-request-semantics.md)
 - [Implement HTTP/1.1 Chunked Request Bodies](completed/0024-implement-http1-chunked-request-bodies.md)
 - [Implement HTTP/1.1 Persistent Connections](completed/0025-implement-http1-persistent-connections.md)
+- [Implement Router HEAD And 405 Semantics](completed/0026-implement-router-head-and-405.md)
 
 ## When To Create A Plan
 

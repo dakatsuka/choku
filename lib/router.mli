@@ -28,7 +28,10 @@ val empty : t
 
 val not_found : Handler.t -> t -> t
 (** [not_found handler router] returns [router] with [handler] used when no
-    route matches. *)
+    route path matches.
+
+    Path matches for disallowed methods use Choku's automatic
+    [405 Method Not Allowed] response instead. *)
 
 val route :
   ?request_body_mode:body_mode -> Method.t -> string -> route_handler -> t -> t
@@ -63,7 +66,12 @@ val options : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
 
 val to_handler : t -> Handler.t
 (** [to_handler router] returns a handler that checks routes in insertion order
-    and invokes the router's not-found handler when no route matches. *)
+    and invokes the router's not-found handler when no route path matches.
+
+    [HEAD] requests first match explicit [HEAD] routes, then fall back to
+    matching [GET] routes. Requests whose path matches at least one route but
+    whose method is not allowed receive [405 Method Not Allowed] with an [Allow]
+    header. *)
 
 (**/**)
 
@@ -74,7 +82,8 @@ module Internal : sig
   val match_route : meth:Method.t -> target:string -> t -> matched_route option
   [@@alert internal "Choku internal API; do not use outside the library."]
   (** [match_route ~meth ~target router] returns the first route matching [meth]
-      and the query-stripped [target], if any. *)
+      and the query-stripped [target], if any. [HEAD] requests fall back to a
+      matching [GET] route when no explicit [HEAD] route matches. *)
 end
 
 (**/**)

@@ -1214,6 +1214,111 @@ let test_run_router_buffered_route () =
     (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
   check bool "body" true (String.ends_with ~suffix:"buffered\n" response)
 
+let test_run_router_head_falls_back_to_get () =
+  require_network ();
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router
+      (request "HEAD /health HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check string "wire"
+    "HTTP/1.1 200 OK\r\n\
+     content-type: text/plain; charset=utf-8\r\n\
+     content-length: 3\r\n\
+     connection: keep-alive\r\n\
+     \r\n"
+    response
+
+let test_run_router_method_not_allowed () =
+  require_network ();
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router
+      (request "POST /health HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "405" true
+    (String.starts_with ~prefix:"HTTP/1.1 405 Method Not Allowed" response);
+  check bool "allow" true (contains_sub ~needle:"allow: GET, HEAD\r\n" response);
+  check bool "body" true
+    (String.ends_with ~suffix:"Method Not Allowed\n" response)
+
+let test_run_router_method_not_allowed_drains_body_and_reuses () =
+  require_network ();
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string
+          "POST /health HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           Content-Length: 4\r\n\
+           \r\n\
+           pingGET /health HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        let first = read_response reader in
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "405" true
+    (contains_sub
+       ~needle:
+         "HTTP/1.1 405 Method Not Allowed\r\n\
+          content-type: text/plain; charset=utf-8\r\n\
+          allow: GET, HEAD\r\n\
+          content-length: 19\r\n\
+          connection: keep-alive\r\n\
+          \r\n\
+          Method Not Allowed\n"
+       response);
+  check bool "second response" true (String.ends_with ~suffix:"ok\n" response)
+
+let test_run_router_method_not_allowed_oversized_body_precedence () =
+  require_network ();
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router
+      (request
+         "POST /health HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 5\r\n\
+          \r\n\
+          hello")
+  in
+  check bool "413" true
+    (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
+
+let test_run_router_method_not_allowed_malformed_body_precedence () =
+  require_network ();
+  let router =
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  in
+  let response =
+    with_router_server router
+      (request
+         "POST /health HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: nope\r\n\
+          \r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
 let test_run_router_streaming_route () =
   require_network ();
   let body = String.make 5_000 'x' in
@@ -1585,6 +1690,16 @@ let () =
             test_run_streaming_body_is_capped_to_content_length;
           test_case "run router buffered route" `Quick
             test_run_router_buffered_route;
+          test_case "run router HEAD falls back to GET" `Quick
+            test_run_router_head_falls_back_to_get;
+          test_case "run router method not allowed" `Quick
+            test_run_router_method_not_allowed;
+          test_case "run router method not allowed drains body and reuses"
+            `Quick test_run_router_method_not_allowed_drains_body_and_reuses;
+          test_case "run router method not allowed oversized body precedence"
+            `Quick test_run_router_method_not_allowed_oversized_body_precedence;
+          test_case "run router method not allowed malformed body precedence"
+            `Quick test_run_router_method_not_allowed_malformed_body_precedence;
           test_case "run router streaming route" `Quick
             test_run_router_streaming_route;
           test_case "run router unmatched body too large" `Quick

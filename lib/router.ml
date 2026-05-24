@@ -24,6 +24,7 @@ type route_entry = {
   handler : route_handler;
 }
 
+type path_match = { route : route_entry; params : Params.t }
 type t = { routes : route_entry list; not_found : Handler.t }
 
 let invalid_pattern () = invalid_arg "invalid route pattern"
@@ -125,32 +126,61 @@ let path_of_target target =
   | None -> target
   | Some index -> String.sub target 0 index
 
-let match_entry ~meth ~path route =
-  if Method.equal route.meth meth then
-    match match_pattern route.pattern path with
-    | Some params -> Some (route, params)
-    | None -> None
-  else None
+let match_path ~path route =
+  match match_pattern route.pattern path with
+  | Some params -> Some { route; params }
+  | None -> None
+
+let path_matches ~path routes = List.filter_map (match_path ~path) routes
+
+let find_method meth matches =
+  List.find_map
+    (fun { route; params } ->
+      if Method.equal route.meth meth then Some (route, params) else None)
+    matches
+
+let select_route ~meth matches =
+  match find_method meth matches with
+  | Some _ as matched -> matched
+  | None when Method.equal meth Method.HEAD -> find_method Method.GET matches
+  | None -> None
+
+let add_unique value values =
+  if List.exists (String.equal value) values then values else values @ [ value ]
+
+let add_allowed_method values meth =
+  let values = add_unique (Method.to_string meth) values in
+  if Method.equal meth Method.GET then add_unique "HEAD" values else values
+
+let allow_header_value matches =
+  matches
+  |> List.fold_left
+       (fun allowed { route; params = _ } ->
+         add_allowed_method allowed route.meth)
+       []
+  |> String.concat ", "
+
+let method_not_allowed matches =
+  Response.text ~status:Status.method_not_allowed "Method Not Allowed\n"
+  |> Response.with_header "allow" (allow_header_value matches)
 
 let to_handler router request =
-  match
-    List.find_map
-      (match_entry ~meth:(Request.meth request) ~path:(Request.path request))
-      router.routes
-  with
+  let matches = path_matches ~path:(Request.path request) router.routes in
+  match select_route ~meth:(Request.meth request) matches with
   | Some (route, params) -> route.handler params request
-  | None -> router.not_found request
+  | None ->
+      if List.is_empty matches then router.not_found request
+      else method_not_allowed matches
 
 module Internal = struct
   type matched_route = { request_body_mode : Request_body_mode.t }
 
   let match_route ~meth ~target router =
     let path = path_of_target target in
-    router.routes
-    |> List.find_map (fun route ->
-        match match_entry ~meth ~path route with
-        | None -> None
-        | Some (route, params) ->
-            let (_ : Params.t) = params in
-            Some { request_body_mode = route.request_body_mode })
+    let matches = path_matches ~path router.routes in
+    match select_route ~meth matches with
+    | None -> None
+    | Some (route, params) ->
+        let (_ : Params.t) = params in
+        Some { request_body_mode = route.request_body_mode }
 end
