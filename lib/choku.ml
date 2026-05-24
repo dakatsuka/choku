@@ -15,3 +15,4 @@ module Middleware = Middleware
 module Router = Router
 module Http1 = Http1
 module Server = Server
+module Client = Client

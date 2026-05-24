@@ -1,0 +1,460 @@
+open Alcotest
+
+[@@@alert "-internal"]
+
+let require_network () =
+  match Sys.getenv_opt "CHOKU_RUN_NETWORK_TESTS" with
+  | Some "1" -> ()
+  | _ -> skip ()
+
+let client_error = testable Choku.Client.Error.pp Choku.Client.Error.equal
+
+let request_ok ?headers ?body ~meth ~url () =
+  match Choku.Client.Request.make ?headers ?body ~meth ~url () with
+  | Ok request -> request
+  | Error error ->
+      failf "unexpected request error: %a" Choku.Client.Error.pp error
+
+let request_error ?headers ?body ~meth ~url () =
+  match Choku.Client.Request.make ?headers ?body ~meth ~url () with
+  | Ok _ -> fail "expected request error"
+  | Error error -> error
+
+let test_request_normalizes_url () =
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test:8080/items?a=1"
+      ()
+  in
+  check
+    (module Choku.Method)
+    "method" Choku.Method.GET
+    (Choku.Client.Request.meth request);
+  check string "url" "http://example.test:8080/items?a=1"
+    (Choku.Client.Request.url request);
+  check string "authority" "example.test:8080"
+    (Choku.Client.Request.authority request);
+  check string "host" "example.test" (Choku.Client.Request.host request);
+  check int "port" 8080 (Choku.Client.Request.port request);
+  check string "target" "/items?a=1" (Choku.Client.Request.target request)
+
+let test_request_defaults_path_and_port () =
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test" ()
+  in
+  check string "authority" "example.test"
+    (Choku.Client.Request.authority request);
+  check int "port" 80 (Choku.Client.Request.port request);
+  check string "target" "/" (Choku.Client.Request.target request)
+
+let test_request_omits_explicit_default_port_from_authority () =
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test:80/" ()
+  in
+  check string "authority" "example.test"
+    (Choku.Client.Request.authority request);
+  check int "port" 80 (Choku.Client.Request.port request)
+
+let test_request_rejects_unsupported_url_and_method () =
+  check client_error "scheme" (Choku.Client.Error.Unsupported_scheme "https")
+    (request_error ~meth:Choku.Method.GET ~url:"https://example.test/" ());
+  check client_error "fragment"
+    (Choku.Client.Error.Invalid_url "fragment not allowed")
+    (request_error ~meth:Choku.Method.GET ~url:"http://example.test/#x" ());
+  check client_error "connect"
+    (Choku.Client.Error.Unsupported_method (Choku.Method.Other "CONNECT"))
+    (request_error ~meth:(Choku.Method.Other "CONNECT")
+       ~url:"http://example.test/" ())
+
+let test_request_replaces_headers_and_body () =
+  let request =
+    request_ok ~meth:Choku.Method.POST ~url:"http://example.test/" ()
+    |> Choku.Client.Request.with_header "authorization" "Bearer token"
+    |> Choku.Client.Request.with_body (Choku.Body.string "ping")
+  in
+  check (option string) "authorization" (Some "Bearer token")
+    (Choku.Headers.get "authorization" (Choku.Client.Request.headers request));
+  check string "body" "ping"
+    (Choku.Body.to_string (Choku.Client.Request.body request))
+
+let test_middleware_order_and_response_replacement () =
+  let trace = ref [] in
+  let middleware name next request =
+    trace := !trace @ [ name ^ "-request" ];
+    let response = next request in
+    trace := !trace @ [ name ^ "-response" ];
+    response
+  in
+  let handler _ =
+    trace := !trace @ [ "transport" ];
+    Ok
+      (Choku.Client.Response.make
+         ~headers:(Choku.Headers.set "x-transport" "yes" Choku.Headers.empty)
+         Choku.Status.ok)
+  in
+  let handler =
+    Choku.Client.Middleware.apply [ middleware "a"; middleware "b" ] handler
+  in
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test/" ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok response ->
+      check (list string) "trace"
+        [ "a-request"; "b-request"; "transport"; "b-response"; "a-response" ]
+        !trace;
+      check (option string) "response header" (Some "yes")
+        (Choku.Headers.get "x-transport"
+           (Choku.Client.Response.headers response))
+
+let test_create_rejects_invalid_limits () =
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  check_raises "invalid head limit"
+    (Invalid_argument "max_response_head_size <= 0") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~max_response_head_size:0 () : Choku.Client.t));
+  check_raises "invalid body limit"
+    (Invalid_argument "max_response_body_size < 0") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~max_response_body_size:(-1) ()
+          : Choku.Client.t))
+
+let available_port () =
+  let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+  Fun.protect
+    ~finally:(fun () -> Unix.close socket)
+    (fun () ->
+      Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
+      match Unix.getsockname socket with
+      | Unix.ADDR_INET (_, port) -> port
+      | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
+
+let find_header_end raw =
+  let len = String.length raw in
+  let rec loop index =
+    if index + 3 >= len then None
+    else if
+      Char.equal raw.[index] '\r'
+      && Char.equal raw.[index + 1] '\n'
+      && Char.equal raw.[index + 2] '\r'
+      && Char.equal raw.[index + 3] '\n'
+    then Some index
+    else loop (index + 1)
+  in
+  loop 0
+
+let string_contains_sub string ~sub =
+  let string_length = String.length string in
+  let sub_length = String.length sub in
+  let rec loop index =
+    if index + sub_length > string_length then false
+    else if String.equal (String.sub string index sub_length) sub then true
+    else loop (index + 1)
+  in
+  loop 0
+
+let read_request_head flow =
+  let buffer = Buffer.create 256 in
+  let scratch = Cstruct.create 128 in
+  let rec loop () =
+    match find_header_end (Buffer.contents buffer) with
+    | Some header_end -> String.sub (Buffer.contents buffer) 0 (header_end + 4)
+    | None ->
+        let read = Eio.Flow.single_read flow scratch in
+        Buffer.add_string buffer
+          (Cstruct.to_string (Cstruct.sub scratch 0 read));
+        loop ()
+  in
+  loop ()
+
+let with_raw_server ?max_response_body_size response f =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let request_head = ref None in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:1 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             request_head := Some (read_request_head flow);
+             Eio.Flow.copy_string response flow;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client = Choku.Client.create ?max_response_body_size ~net () in
+       let request =
+         request_ok ~meth:Choku.Method.GET
+           ~url:(Printf.sprintf "http://127.0.0.1:%d/items?a=1" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     let response = connect 100 in
+     let request_head = !request_head in
+     result := Some (f response request_head);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  match !result with Some result -> result | None -> fail "no client result"
+
+let test_request_wire_and_fixed_response () =
+  with_raw_server
+    "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nX-Test: yes\r\n\r\nhello"
+    (fun response request_head ->
+      match response with
+      | Error error ->
+          failf "unexpected response error: %a" Choku.Client.Error.pp error
+      | Ok response ->
+          let request_head = Option.get request_head in
+          check bool "request line" true
+            (String.starts_with ~prefix:"GET /items?a=1 HTTP/1.1\r\n"
+               request_head);
+          check bool "host" true
+            (string_contains_sub request_head ~sub:"host: 127.0.0.1");
+          check int "status" 200
+            (Choku.Status.code (Choku.Client.Response.status response));
+          check string "body" "hello"
+            (Choku.Body.to_string (Choku.Client.Response.body response));
+          check (option string) "header" (Some "yes")
+            (Choku.Headers.get "x-test"
+               (Choku.Client.Response.headers response)))
+
+let test_chunked_response_skips_informational () =
+  with_raw_server
+    "HTTP/1.1 100 Continue\r\n\
+     \r\n\
+     HTTP/1.1 200 OK\r\n\
+     Transfer-Encoding: chunked\r\n\
+     \r\n\
+     5\r\n\
+     hello\r\n\
+     0\r\n\
+     \r\n" (fun response _ ->
+      match response with
+      | Error error ->
+          failf "unexpected response error: %a" Choku.Client.Error.pp error
+      | Ok response ->
+          check string "body" "hello"
+            (Choku.Body.to_string (Choku.Client.Response.body response)))
+
+let test_head_response_is_bodyless () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:1 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             ignore (read_request_head flow : string);
+             Eio.Flow.copy_string
+               "HTTP/1.1 204 No Content\r\nContent-Length: 10\r\n\r\nignored"
+               flow;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client = Choku.Client.create ~net () in
+       let request =
+         request_ok ~meth:Choku.Method.HEAD
+           ~url:(Printf.sprintf "http://127.0.0.1:%d/" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     result := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  match !result with
+  | None -> fail "no client result"
+  | Some (Error error) ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Some (Ok response) ->
+      check string "body" ""
+        (Choku.Body.to_string (Choku.Client.Response.body response))
+
+let test_rejects_ambiguous_response_framing () =
+  with_raw_server
+    "HTTP/1.1 200 OK\r\n\
+     Content-Length: 5\r\n\
+     Transfer-Encoding: chunked\r\n\
+     \r\n\
+     0\r\n\
+     \r\n" (fun response _ ->
+      check
+        (result reject client_error)
+        "error" (Error Choku.Client.Error.Unsupported_transfer_encoding)
+        response)
+
+let test_rejects_unsupported_transfer_encoding () =
+  with_raw_server "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n"
+    (fun response _ ->
+      check
+        (result reject client_error)
+        "error" (Error Choku.Client.Error.Unsupported_transfer_encoding)
+        response)
+
+let test_rejects_invalid_content_length () =
+  with_raw_server
+    "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello"
+    (fun response _ ->
+      check
+        (result reject client_error)
+        "error" (Error Choku.Client.Error.Invalid_content_length) response)
+
+let test_rejects_unsupported_upgrade () =
+  with_raw_server "HTTP/1.1 101 Switching Protocols\r\n\r\n" (fun response _ ->
+      check
+        (result reject client_error)
+        "error" (Error Choku.Client.Error.Unsupported_upgrade) response)
+
+let test_rejects_response_body_too_large () =
+  with_raw_server ~max_response_body_size:4
+    "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello" (fun response _ ->
+      check
+        (result reject client_error)
+        "error" (Error Choku.Client.Error.Response_body_too_large) response)
+
+let test_zero_response_body_limit_allows_empty_only () =
+  with_raw_server ~max_response_body_size:0
+    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" (fun response _ ->
+      match response with
+      | Error error ->
+          failf "unexpected response error: %a" Choku.Client.Error.pp error
+      | Ok response ->
+          check string "body" ""
+            (Choku.Body.to_string (Choku.Client.Response.body response)))
+
+let test_rejects_non_buffered_request_body () =
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let client = Choku.Client.create ~net () in
+  let body =
+    Choku.Body.Internal.streaming (Eio.Flow.string_source "streaming")
+  in
+  let request =
+    request_ok ~meth:Choku.Method.POST ~url:"http://example.test/" ~body ()
+  in
+  Eio.Switch.run @@ fun sw ->
+  check
+    (result reject client_error)
+    "error" (Error Choku.Client.Error.Request_body_not_buffered)
+    (Choku.Client.request ~sw client request)
+
+let test_repeated_requests_under_one_switch () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let handled = ref 0 in
+  try
+    Eio.Switch.run @@ fun sw ->
+    let socket = Eio.Net.listen ~reuse_addr:true ~backlog:16 ~sw net addr in
+    Eio.Fiber.fork ~sw (fun () ->
+        Eio.Net.run_server socket
+          ~on_error:(function
+            | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+          (fun flow _addr ->
+            incr handled;
+            ignore (read_request_head flow : string);
+            Eio.Flow.copy_string
+              "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok" flow;
+            Eio.Flow.shutdown flow `All));
+    Eio.Switch.run @@ fun client_sw ->
+    let client = Choku.Client.create ~net () in
+    let rec request_once attempts =
+      let request =
+        request_ok ~meth:Choku.Method.GET
+          ~url:(Printf.sprintf "http://127.0.0.1:%d/" port)
+          ()
+      in
+      match Choku.Client.request ~sw:client_sw client request with
+      | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+          Eio.Time.sleep clock 0.01;
+          request_once (attempts - 1)
+      | Ok response ->
+          check string "body" "ok"
+            (Choku.Body.to_string (Choku.Client.Response.body response))
+      | Error error ->
+          failf "unexpected response error: %a" Choku.Client.Error.pp error
+    in
+    for _ = 1 to 20 do
+      request_once 100
+    done;
+    check int "handled" 20 !handled;
+    Eio.Switch.fail sw Exit
+  with Exit -> ()
+
+let () =
+  run "client"
+    [
+      ( "client",
+        [
+          test_case "request normalizes URL" `Quick test_request_normalizes_url;
+          test_case "request defaults path and port" `Quick
+            test_request_defaults_path_and_port;
+          test_case "request omits explicit default port from authority" `Quick
+            test_request_omits_explicit_default_port_from_authority;
+          test_case "request rejects unsupported URL and method" `Quick
+            test_request_rejects_unsupported_url_and_method;
+          test_case "request replaces headers and body" `Quick
+            test_request_replaces_headers_and_body;
+          test_case "middleware order and response replacement" `Quick
+            test_middleware_order_and_response_replacement;
+          test_case "create rejects invalid limits" `Quick
+            test_create_rejects_invalid_limits;
+          test_case "request wire and fixed response" `Quick
+            test_request_wire_and_fixed_response;
+          test_case "chunked response skips informational" `Quick
+            test_chunked_response_skips_informational;
+          test_case "HEAD response is bodyless" `Quick
+            test_head_response_is_bodyless;
+          test_case "rejects ambiguous response framing" `Quick
+            test_rejects_ambiguous_response_framing;
+          test_case "rejects unsupported transfer-encoding" `Quick
+            test_rejects_unsupported_transfer_encoding;
+          test_case "rejects invalid content-length" `Quick
+            test_rejects_invalid_content_length;
+          test_case "rejects unsupported upgrade" `Quick
+            test_rejects_unsupported_upgrade;
+          test_case "rejects response body too large" `Quick
+            test_rejects_response_body_too_large;
+          test_case "zero response body limit allows empty only" `Quick
+            test_zero_response_body_limit_allows_empty_only;
+          test_case "rejects non-buffered request body" `Quick
+            test_rejects_non_buffered_request_body;
+          test_case "repeated requests under one switch" `Quick
+            test_repeated_requests_under_one_switch;
+        ] );
+    ]
