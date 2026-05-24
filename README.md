@@ -227,6 +227,10 @@ dune exec choku-hello
 dune exec choku-upload-streaming
 ```
 
+For deployment behind nginx, AWS ALB, Classic Load Balancer HTTP(S), or a
+similar reverse proxy, see
+[Reverse Proxy Deployment](docs/product-specs/reverse-proxy-deployment.md).
+
 ## Development
 
 Expected local checks:
