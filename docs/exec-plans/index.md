@@ -45,6 +45,7 @@ None.
 - [Implement Generic Pre-Body Selector](completed/0030-implement-generic-pre-body-selector.md)
 - [Implement Response Streaming](completed/0031-implement-response-streaming.md)
 - [Inventory HTTP Server Baseline](completed/0032-inventory-http-server-baseline.md)
+- [Refresh Minimal Server Specs](completed/0033-refresh-minimal-server-specs.md)
 
 ## When To Create A Plan
 

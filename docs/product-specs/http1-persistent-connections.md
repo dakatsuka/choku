@@ -31,8 +31,6 @@ into a fully featured edge server.
 - Explicit support for HTTP/1.1 request pipelining beyond sequential processing
   in wire order.
 - HTTP/1.0 keep-alive.
-- Chunked response bodies.
-- Response streaming.
 - Connection upgrade, CONNECT tunneling, or WebSocket.
 - TLS, HTTP/2, or HTTP/3.
 - A separate public keep-alive idle timeout setting in this milestone.
@@ -78,14 +76,20 @@ into a fully featured edge server.
 - Streaming request bodies are not reused in this milestone. If a route or
   server uses `Streaming`, Choku writes one response with `Connection: close`
   and closes the connection.
+- Successful buffered responses and successful streaming responses are eligible
+  for connection reuse when no other close condition applies.
+- Response streaming failures close the connection because Choku cannot
+  synthesize a replacement response after the response head or partial body may
+  already be on the wire.
 - `request_head_timeout`, when configured, applies to each request-head read on
   a persistent connection, including idle time between requests.
 - Because `request_head_timeout` defaults to `None`, direct deployments that are
   not protected by nginx, ALB, ELB, or similar infrastructure should configure a
   finite timeout to avoid idle keep-alive connections holding fibers
   indefinitely.
-- Existing `Response.t` serialization remains buffered and `Content-Length`
-  based. Choku does not need chunked responses to support this milestone.
+- Unknown-length streaming responses use `Transfer-Encoding: chunked`, and
+  known-length streaming responses use `Content-Length`, as specified by
+  [Response Streaming](response-streaming.md).
 
 ## Public Contracts
 
@@ -110,6 +114,17 @@ val create_router :
   ?request_head_timeout:float option ->
   ?middlewares:Middleware.t list ->
   Router.t ->
+  t
+
+val create_with_request_body_selector :
+  ?keep_alive:bool ->
+  ?max_request_body_size:int ->
+  ?max_request_head_size:int ->
+  ?request_head_timeout:float option ->
+  request_body_mode:(Request_head.t -> request_body_mode) ->
+  ?middlewares:Middleware.t list ->
+  handler:Handler.t ->
+  unit ->
   t
 ```
 

@@ -44,7 +44,6 @@ public routing semantics.
 
 ## Current Next Priority
 
-The current next priority is to update stale minimal server specs to the current
-accepted application-server baseline, then design the first HTTP Client
-milestone. See
+The current next priority is to design the first HTTP Client milestone,
+including request-target and URI representation. See
 [HTTP Server Baseline And Client Readiness](http-server-baseline-and-client-readiness.md).

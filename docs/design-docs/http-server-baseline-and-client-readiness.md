@@ -194,12 +194,9 @@ over an Eio flow/network connection, with explicit body delivery and no pool.
 
 ## Suggested Next Work
 
-1. Update stale minimal server specs to match the current accepted baseline.
-   Include explicit limitations for automatic `Date` and `Expect:
-   100-continue`.
-2. Design the first HTTP Client milestone, including request-target and URI
+1. Design the first HTTP Client milestone, including request-target and URI
    representation.
-3. Implement the minimal HTTP Client only after the shared/server-only type
+2. Implement the minimal HTTP Client only after the shared/server-only type
    boundary is clear.
 
 ## Open Questions
