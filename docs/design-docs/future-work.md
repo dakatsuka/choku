@@ -25,10 +25,9 @@ route-local middleware, or optional helpers rather than core server parsing. See
 
 ### Response Streaming Follow-Up APIs
 
-The first response streaming design should focus on returning streaming bodies
-from handlers. Future follow-ups may add convenience APIs for files, server-sent
-events, callback-style stream writers, trailers, and HTTP/2 or HTTP/3 flow
-control.
+Response streaming now supports callback-scoped stream writers. Future
+follow-ups may add convenience APIs for files, server-sent events, trailers, and
+HTTP/2 or HTTP/3 flow control.
 
 ### Router Follow-Up Features
 
@@ -45,5 +44,7 @@ public routing semantics.
 
 ## Current Next Priority
 
-No current next priority is recorded. Add one here when a deferred topic becomes
-the next planned design or implementation focus.
+The current next priority is to update stale minimal server specs to the current
+accepted application-server baseline, then design the first HTTP Client
+milestone. See
+[HTTP Server Baseline And Client Readiness](http-server-baseline-and-client-readiness.md).
