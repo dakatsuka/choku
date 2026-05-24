@@ -33,6 +33,13 @@ buffered or streaming bodies from request-head metadata.
 This requires deciding what stable request-head type Choku should expose
 publicly.
 
+### Response Streaming Follow-Up APIs
+
+The first response streaming design should focus on returning streaming bodies
+from handlers. Future follow-ups may add convenience APIs for files, server-sent
+events, callback-style stream writers, trailers, and HTTP/2 or HTTP/3 flow
+control.
+
 ### Router Follow-Up Features
 
 Future router work may include:

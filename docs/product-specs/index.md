@@ -12,6 +12,7 @@ Product specs define externally visible behavior and user expectations.
 - [Minimal Server API](minimal-server-api.md)
 - [Project Charter](project-charter.md)
 - [Reverse Proxy Deployment](reverse-proxy-deployment.md)
+- [Response Streaming](response-streaming.md)
 - [URL-Encoded Form Support](form-urlencoded.md)
 
 ## When To Add Or Update A Product Spec

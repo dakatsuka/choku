@@ -15,6 +15,7 @@ This directory is the source of truth for Choku's technical design.
 - [Multipart Form-Data Support](multipart-form-data.md)
 - [Project Layout and Tooling](project-layout-and-tooling.md)
 - [Router HEAD And 405 Semantics](router-head-and-405.md)
+- [Response Streaming](response-streaming.md)
 - [Route-Level Body Mode](route-level-body-mode.md)
 - [Streaming Request Bodies](streaming-request-bodies.md)
 - [URL-Encoded Form Support](form-urlencoded.md)
