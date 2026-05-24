@@ -14,7 +14,7 @@ The name "Choku" means "direct" in Japanese.
 Choku is in early design and implementation. The first implementation
 milestone is a minimal HTTP/1.1 server over plain TCP with:
 
-- `Connection: close` behavior;
+- HTTP/1.1 persistent connection behavior;
 - buffered and replayable request bodies by default;
 - opt-in streaming request bodies;
 - `Content-Length` and `Transfer-Encoding: chunked` request bodies;

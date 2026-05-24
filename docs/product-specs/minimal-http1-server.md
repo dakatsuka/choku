@@ -25,7 +25,7 @@ designed.
 - TLS or HTTPS.
 - HTTP/2 or HTTP/3.
 - Router DSL.
-- Keep-alive and request pipelining.
+- Concurrent request pipelining.
 - Chunked response bodies.
 - Trailers.
 - Connection upgrade or WebSocket.
@@ -71,7 +71,8 @@ designed.
 - Responses are serialized with a status line, headers, and buffered body.
   Explicit `HEAD` requests preserve the serialized `Content-Length` that a `GET`
   response would have used, but do not write response body bytes.
-- The default response behavior is `Connection: close`.
+- The default response behavior is HTTP/1.1 persistent connection reuse, as
+  specified by [HTTP/1.1 Persistent Connections](http1-persistent-connections.md).
 - Uncaught non-cancellation handler exceptions before response writing produce
   the default `500 Internal Server Error` response already defined by the
   minimal server API.

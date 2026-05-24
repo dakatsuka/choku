@@ -105,19 +105,19 @@ let with_running_server ?mono_clock server f =
   match !response with Some response -> response | None -> fail "no response"
 
 let with_server ?(max_request_body_size = 4) ?max_request_head_size
-    ?request_head_timeout ?mono_clock
+    ?request_head_timeout ?mono_clock ?keep_alive
     ?(request_body_mode = Choku.Server.Buffered) handler f =
   let server =
-    Choku.Server.create ?max_request_head_size ?request_head_timeout
+    Choku.Server.create ?keep_alive ?max_request_head_size ?request_head_timeout
       ~max_request_body_size ~request_body_mode ~handler ()
   in
   with_running_server ?mono_clock server f
 
 let with_router_server ?(max_request_body_size = 4) ?max_request_head_size
-    ?request_head_timeout ?mono_clock router f =
+    ?request_head_timeout ?mono_clock ?keep_alive router f =
   let server =
-    Choku.Server.create_router ?max_request_head_size ?request_head_timeout
-      ~max_request_body_size router
+    Choku.Server.create_router ?keep_alive ?max_request_head_size
+      ?request_head_timeout ~max_request_body_size router
   in
   with_running_server ?mono_clock server f
 
@@ -133,6 +133,99 @@ let require_network () =
   | Some "1" -> ()
   | _ -> skip ()
 
+type response_reader = {
+  flow : Eio.Flow.source_ty Eio.Resource.t;
+  mutable buffered : string;
+}
+
+let response_reader flow =
+  { flow :> Eio.Flow.source_ty Eio.Resource.t; buffered = "" }
+
+let take_from_reader reader length =
+  if String.length reader.buffered >= length then (
+    let taken = String.sub reader.buffered 0 length in
+    reader.buffered <-
+      String.sub reader.buffered length (String.length reader.buffered - length);
+    taken)
+  else
+    let prefix = reader.buffered in
+    reader.buffered <- "";
+    let remaining = length - String.length prefix in
+    let exact = Cstruct.create remaining in
+    Eio.Flow.read_exact reader.flow exact;
+    prefix ^ Cstruct.to_string exact
+
+let find_header_end raw =
+  let len = String.length raw in
+  let rec loop index =
+    if index + 3 >= len then None
+    else if
+      Char.equal raw.[index] '\r'
+      && Char.equal raw.[index + 1] '\n'
+      && Char.equal raw.[index + 2] '\r'
+      && Char.equal raw.[index + 3] '\n'
+    then Some index
+    else loop (index + 1)
+  in
+  loop 0
+
+let read_until_header_end reader =
+  let scratch = Cstruct.create 128 in
+  let rec loop () =
+    match find_header_end reader.buffered with
+    | Some header_end ->
+        let head_end = header_end + 4 in
+        let head = String.sub reader.buffered 0 head_end in
+        reader.buffered <-
+          String.sub reader.buffered head_end
+            (String.length reader.buffered - head_end);
+        head
+    | None ->
+        let read = Eio.Flow.single_read reader.flow scratch in
+        reader.buffered <-
+          reader.buffered ^ Cstruct.to_string (Cstruct.sub scratch 0 read);
+        loop ()
+  in
+  loop ()
+
+let response_content_length head =
+  head |> String.split_on_char '\n'
+  |> List.find_map (fun line ->
+      let line =
+        if
+          String.length line > 0
+          && Char.equal line.[String.length line - 1] '\r'
+        then String.sub line 0 (String.length line - 1)
+        else line
+      in
+      match String.index_opt line ':' with
+      | None -> None
+      | Some index ->
+          let name = String.sub line 0 index |> String.lowercase_ascii in
+          if String.equal name "content-length" then
+            Some
+              (String.sub line (index + 1) (String.length line - index - 1)
+              |> String.trim |> int_of_string)
+          else None)
+  |> Option.value ~default:0
+
+let read_response ?(include_body = true) reader =
+  let head = read_until_header_end reader in
+  if include_body then
+    let body = take_from_reader reader (response_content_length head) in
+    head ^ body
+  else head
+
+let contains_sub ~needle haystack =
+  let needle_len = String.length needle in
+  let haystack_len = String.length haystack in
+  let rec loop index =
+    if index + needle_len > haystack_len then false
+    else if String.equal (String.sub haystack index needle_len) needle then true
+    else loop (index + 1)
+  in
+  loop 0
+
 let test_run_success () =
   require_network ();
   let response =
@@ -142,6 +235,314 @@ let test_run_success () =
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
   check bool "body" true (String.ends_with ~suffix:"ok\n" response)
+
+let test_run_keep_alive_two_gets () =
+  require_network ();
+  let response =
+    with_server
+      (fun req -> Choku.Response.text (Choku.Request.path req ^ "\n"))
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "GET /one HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let first = read_response reader in
+        Eio.Flow.copy_string "GET /two HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "first response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\n/one\n" response);
+  check bool "second response" true (String.ends_with ~suffix:"/two\n" response)
+
+let test_run_keep_alive_pipelined_gets () =
+  require_network ();
+  let response =
+    with_server
+      (fun req -> Choku.Response.text (Choku.Request.path req ^ "\n"))
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string
+          "GET /one HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n\
+           GET /two HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        let first = read_response reader in
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "first response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\n/one\n" response);
+  check bool "second response" true (String.ends_with ~suffix:"/two\n" response)
+
+let test_run_keep_alive_fixed_post_then_get () =
+  require_network ();
+  let response =
+    with_server ~max_request_body_size:4
+      (fun req ->
+        if Choku.Method.equal (Choku.Request.meth req) Choku.Method.POST then
+          Choku.Response.text
+            (Choku.Body.to_string (Choku.Request.body req) ^ "\n")
+        else Choku.Response.text "next\n")
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string
+          "POST / HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           Content-Length: 4\r\n\
+           \r\n\
+           pingGET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        let first = read_response reader in
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "post response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\nping\n" response);
+  check bool "next response" true (String.ends_with ~suffix:"next\n" response)
+
+let test_run_keep_alive_chunked_post_then_get () =
+  require_network ();
+  let response =
+    with_server ~max_request_body_size:4
+      (fun req ->
+        if Choku.Method.equal (Choku.Request.meth req) Choku.Method.POST then
+          Choku.Response.text
+            (Choku.Body.to_string (Choku.Request.body req) ^ "\n")
+        else Choku.Response.text "next\n")
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string
+          "POST / HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           Transfer-Encoding: chunked\r\n\
+           \r\n\
+           4\r\n\
+           ping\r\n\
+           0\r\n\
+           \r\n\
+           GET /next HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           \r\n"
+          flow;
+        let first = read_response reader in
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "chunked response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\nping\n" response);
+  check bool "next response" true (String.ends_with ~suffix:"next\n" response)
+
+let test_run_keep_alive_head_then_get () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> Choku.Response.text "hello")
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "HEAD / HTTP/1.1\r\nHost: example.test\r\n\r\n"
+          flow;
+        let first = read_response ~include_body:false reader in
+        Eio.Flow.copy_string "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n" flow;
+        let second = read_response reader in
+        Eio.Flow.shutdown flow `Send;
+        first ^ second)
+  in
+  check bool "head response" true
+    (contains_sub
+       ~needle:"content-length: 5\r\nconnection: keep-alive\r\n\r\nHTTP/1.1"
+       response);
+  check bool "get body" true (String.ends_with ~suffix:"hello" response)
+
+let test_run_connection_close_request_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> Choku.Response.text "bye\n")
+      (fun flow ->
+        Eio.Flow.copy_string
+          "GET / HTTP/1.1\r\n\
+           Host: example.test\r\n\
+           Connection: keep-alive, Close\r\n\
+           \r\n"
+          flow;
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n\r\nbye\n" response)
+
+let test_run_keep_alive_false_closes () =
+  require_network ();
+  let response =
+    with_server ~keep_alive:false
+      (fun _ -> Choku.Response.text "ok\n")
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n\r\nok\n" response)
+
+let test_run_response_connection_close_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ ->
+        Choku.Response.text "bye\n"
+        |> Choku.Response.with_header "Connection" "Close")
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n\r\nbye\n" response)
+
+let test_run_response_connection_close_token_closes () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ ->
+        let headers =
+          Choku.Headers.empty
+          |> Choku.Headers.add "Connection" "keep-alive"
+          |> Choku.Headers.add "Connection" "upgrade, Close"
+        in
+        Choku.Response.make Choku.Status.ok ~headers
+          ~body:(Choku.Body.string "bye\n"))
+      (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
+  in
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n\r\nbye\n" response)
+
+let test_run_keep_alive_client_eof_after_response () =
+  require_network ();
+  let remaining =
+    with_server
+      (fun _ -> Choku.Response.text "ok\n")
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n" flow;
+        let response = read_response reader in
+        check bool "keep-alive response" true
+          (contains_sub ~needle:"connection: keep-alive\r\n\r\nok\n" response);
+        Eio.Flow.shutdown flow `Send;
+        let buffer = Buffer.create 128 in
+        (try Eio.Flow.copy flow (Eio.Flow.buffer_sink buffer)
+         with End_of_file -> ());
+        Buffer.contents buffer)
+  in
+  check string "no synthetic response" "" remaining
+
+let test_run_keep_alive_partial_next_request_eof_bad_request () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> Choku.Response.text "ok\n")
+      (fun flow ->
+        let reader = response_reader flow in
+        Eio.Flow.copy_string "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n" flow;
+        let first = read_response reader in
+        Eio.Flow.copy_string "GET /broken HTTP/1.1\r\nHost" flow;
+        Eio.Flow.shutdown flow `Send;
+        let second = read_response reader in
+        first ^ second)
+  in
+  check bool "first response" true
+    (contains_sub ~needle:"connection: keep-alive\r\n\r\nok\n" response);
+  check bool "second response" true
+    (contains_sub
+       ~needle:
+         "HTTP/1.1 400 Bad Request\r\n\
+          content-type: text/plain; charset=utf-8\r\n\
+          content-length: 12\r\n\
+          connection: close\r\n\
+          \r\n\
+          Bad Request\n"
+       response)
+
+let test_run_streaming_request_closes () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Choku.Server.Streaming
+      (fun req ->
+        check
+          (result string (of_pp Choku.Body.pp_error))
+          "body" (Ok "ping")
+          (Choku.Body.to_string_limited ~max_size:4 (Choku.Request.body req));
+        Choku.Response.text "ok\n")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Content-Length: 4\r\n\
+          \r\n\
+          ping")
+  in
+  check bool "connection close" true
+    (contains_sub ~needle:"connection: close\r\n\r\nok\n" response)
+
+let test_run_keep_alive_idle_timeout_before_second_request () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let clock = Eio.Stdenv.clock env in
+  let port =
+    let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    Fun.protect
+      ~finally:(fun () -> Unix.close socket)
+      (fun () ->
+        Unix.bind socket Unix.(ADDR_INET (inet_addr_loopback, 0));
+        match Unix.getsockname socket with
+        | Unix.ADDR_INET (_, port) -> port
+        | Unix.ADDR_UNIX _ -> fail "expected TCP socket")
+  in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let server =
+    Choku.Server.create ~request_head_timeout:(Some 0.02)
+      ~handler:(fun _ -> Choku.Response.text "ok\n")
+      ()
+  in
+  let response = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     Eio.Fiber.fork ~sw (fun () ->
+         Choku.Server.run ~sw ~net ~mono_clock ~addr server);
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       match Eio.Net.connect ~sw:client_sw net addr with
+       | flow ->
+           let reader = response_reader flow in
+           Eio.Flow.copy_string "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n"
+             flow;
+           let first = read_response reader in
+           Eio.Time.sleep clock 0.05;
+           let second = read_response reader in
+           first ^ second
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     response := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  let response =
+    match !response with
+    | Some response -> response
+    | None -> fail "no response"
+  in
+  check bool "first 200" true
+    (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
+  check bool "second 408" true
+    (contains_sub ~needle:"HTTP/1.1 408 Request Timeout" response)
 
 let test_run_head_suppresses_response_body () =
   require_network ();
@@ -154,7 +555,7 @@ let test_run_head_suppresses_response_body () =
     "HTTP/1.1 200 OK\r\n\
      content-type: text/plain; charset=utf-8\r\n\
      content-length: 5\r\n\
-     connection: close\r\n\
+     connection: keep-alive\r\n\
      \r\n"
     response
 
@@ -1099,6 +1500,32 @@ let () =
           test_case "create rejects invalid request head limits" `Quick
             test_create_rejects_invalid_request_head_limits;
           test_case "run success" `Quick test_run_success;
+          test_case "run keep-alive two GETs" `Quick
+            test_run_keep_alive_two_gets;
+          test_case "run keep-alive pipelined GETs" `Quick
+            test_run_keep_alive_pipelined_gets;
+          test_case "run keep-alive fixed POST then GET" `Quick
+            test_run_keep_alive_fixed_post_then_get;
+          test_case "run keep-alive chunked POST then GET" `Quick
+            test_run_keep_alive_chunked_post_then_get;
+          test_case "run keep-alive HEAD then GET" `Quick
+            test_run_keep_alive_head_then_get;
+          test_case "run Connection close request closes" `Quick
+            test_run_connection_close_request_closes;
+          test_case "run keep_alive false closes" `Quick
+            test_run_keep_alive_false_closes;
+          test_case "run response Connection close closes" `Quick
+            test_run_response_connection_close_closes;
+          test_case "run response Connection close token closes" `Quick
+            test_run_response_connection_close_token_closes;
+          test_case "run keep-alive client EOF after response" `Quick
+            test_run_keep_alive_client_eof_after_response;
+          test_case "run keep-alive partial next request EOF bad request" `Quick
+            test_run_keep_alive_partial_next_request_eof_bad_request;
+          test_case "run streaming request closes" `Quick
+            test_run_streaming_request_closes;
+          test_case "run keep-alive idle timeout before second request" `Quick
+            test_run_keep_alive_idle_timeout_before_second_request;
           test_case "run HEAD suppresses response body" `Quick
             test_run_head_suppresses_response_body;
           test_case "run post request" `Quick test_run_post_request;

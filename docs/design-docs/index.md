@@ -8,6 +8,7 @@ This directory is the source of truth for Choku's technical design.
 - [Future Work](future-work.md)
 - [HTTP Request Limits And Timeouts](http-request-limits-and-timeouts.md)
 - [HTTP/1.1 Chunked Request Bodies](http1-chunked-request-bodies.md)
+- [HTTP/1.1 Persistent Connections](http1-persistent-connections.md)
 - [Initial Architecture](initial-architecture.md)
 - [Minimal Router DSL](minimal-router-dsl.md)
 - [Minimal Server, Handler, and Middleware API](minimal-server-handler-middleware-api.md)

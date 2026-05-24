@@ -5,6 +5,7 @@ Product specs define externally visible behavior and user expectations.
 ## Current Specs
 
 - [Minimal HTTP/1.1 Server Milestone](minimal-http1-server.md)
+- [HTTP/1.1 Persistent Connections](http1-persistent-connections.md)
 - [Minimal Router DSL](minimal-router-dsl.md)
 - [Multipart Form-Data Support](multipart-form-data.md)
 - [Minimal Server API](minimal-server-api.md)

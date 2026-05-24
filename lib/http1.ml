@@ -191,12 +191,12 @@ let parse_request_string
               | Error Http1_chunked.Body_too_large -> Error Body_too_large
               | Error Http1_chunked.Malformed -> Error Malformed_chunked_body)))
 
-let serialize_response ?(include_body = true) response =
+let serialize_response ?(include_body = true) ?(connection = "close") response =
   let body = Response.body response |> Body.to_string in
   let headers =
     Response.headers response
     |> Headers.set "content-length" (string_of_int (String.length body))
-    |> Headers.set "connection" "close"
+    |> Headers.set "connection" connection
   in
   let status = Response.status response in
   let status_line =

@@ -37,6 +37,7 @@ None.
 - [Design HTTP Request Limits And Timeouts](completed/0022-design-http-request-limits-and-timeouts.md)
 - [Tighten HTTP/1.1 Request Semantics](completed/0023-tighten-http1-request-semantics.md)
 - [Implement HTTP/1.1 Chunked Request Bodies](completed/0024-implement-http1-chunked-request-bodies.md)
+- [Implement HTTP/1.1 Persistent Connections](completed/0025-implement-http1-persistent-connections.md)
 
 ## When To Create A Plan
 
