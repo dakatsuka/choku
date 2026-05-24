@@ -155,10 +155,11 @@ let read_request_head_and_body_prefix ~max_request_head_size flow =
           in
           Ok { body_prefix; head })
 
-let read_fixed_body ~max_request_body_size flow head body_prefix =
-  match Http1.content_length head.Http1.headers with
+let read_fixed_body ~max_request_body_size ~max_chunk_metadata_size flow head
+    body_prefix =
+  match Http1.request_body_framing head.Http1.headers with
   | Error error -> Error error
-  | Ok content_length -> (
+  | Ok (Http1.Fixed content_length) -> (
       if content_length > max_request_body_size then Error Http1.Body_too_large
       else
         let already_read = String.length body_prefix in
@@ -169,6 +170,16 @@ let read_fixed_body ~max_request_body_size flow head body_prefix =
           match Eio.Flow.read_exact flow exact with
           | exception End_of_file -> Error Http1.Invalid_content_length
           | () -> Ok (body_prefix ^ Cstruct.to_string exact))
+  | Ok Http1.Chunked -> (
+      let source =
+        Http1_chunked.source ~max_body_size:max_request_body_size
+          ~max_metadata_size:max_chunk_metadata_size flow body_prefix
+      in
+      match Eio.Flow.read_all source with
+      | body -> Ok body
+      | exception Body.Body_too_large_read -> Error Http1.Body_too_large
+      | exception Body.Malformed_body_read -> Error Http1.Malformed_chunked_body
+      )
 
 let request_of_head_body head body =
   try
@@ -179,28 +190,36 @@ let request_of_head_body head body =
 
 let request_of_head head body = request_of_head_body head (Body.string body)
 
-let streaming_request_of_head ~max_request_body_size flow head body_prefix =
-  match Http1.content_length head.Http1.headers with
+let streaming_request_of_head ~max_request_body_size ~max_chunk_metadata_size
+    flow head body_prefix =
+  match Http1.request_body_framing head.Http1.headers with
   | Error error -> Error error
-  | Ok content_length ->
+  | Ok (Http1.Fixed content_length) ->
       if content_length > max_request_body_size then Error Http1.Body_too_large
       else
         let source = fixed_body_source flow body_prefix content_length in
         let body = Body.Internal.streaming ~content_length source in
         request_of_head_body head body
+  | Ok Http1.Chunked ->
+      let source =
+        Http1_chunked.source ~max_body_size:max_request_body_size
+          ~max_metadata_size:max_chunk_metadata_size flow body_prefix
+      in
+      let body = Body.Internal.streaming source in
+      request_of_head_body head body
 
 let read_request_after_head t flow { body_prefix; head } =
   match t.request_body_mode head with
   | Buffered -> (
       match
         read_fixed_body ~max_request_body_size:t.max_request_body_size flow head
-          body_prefix
+          ~max_chunk_metadata_size:t.max_request_head_size body_prefix
       with
       | Error error -> Error error
       | Ok body -> request_of_head head body)
   | Streaming ->
       streaming_request_of_head ~max_request_body_size:t.max_request_body_size
-        flow head body_prefix
+        ~max_chunk_metadata_size:t.max_request_head_size flow head body_prefix
 
 let read_request_head_with_timeout ?mono_clock t flow =
   match (t.request_head_timeout, mono_clock) with
@@ -233,6 +252,10 @@ let handle_connection ?mono_clock t flow =
       let response =
         try t.handler request with
         | Eio.Cancel.Cancelled _ as exn -> raise exn
+        | Body.Body_too_large_read ->
+            Http1.response_for_error Http1.Body_too_large
+        | Body.Malformed_body_read | Body.Unexpected_end_of_body_read ->
+            Http1.response_for_error Http1.Malformed_chunked_body
         | _ -> default_internal_error
       in
       let include_body =

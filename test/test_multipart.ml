@@ -71,6 +71,26 @@ let failing_source () =
     ( { Failing_source.read_count = 0 },
       Eio.Flow.Pi.source (module Failing_source) )
 
+module Malformed_body_source = struct
+  type t = unit
+
+  let read_methods = []
+  let single_read () _ = raise Choku.Body.Malformed_body_read
+end
+
+let malformed_body_source () =
+  Eio.Resource.T ((), Eio.Flow.Pi.source (module Malformed_body_source))
+
+module Body_too_large_source = struct
+  type t = unit
+
+  let read_methods = []
+  let single_read () _ = raise Choku.Body.Body_too_large_read
+end
+
+let body_too_large_source () =
+  Eio.Resource.T ((), Eio.Flow.Pi.source (module Body_too_large_source))
+
 let expect_multipart = function
   | Ok multipart -> multipart
   | Error error ->
@@ -321,6 +341,18 @@ let test_of_request_limited_rejects_unexpected_end_of_body () =
        ~max_size:(String.length multipart_body)
        request)
 
+let test_of_request_limited_rejects_malformed_streaming_body () =
+  let body = Choku.Body.Internal.streaming (malformed_body_source ()) in
+  let request =
+    request_with_body ~content_type:"multipart/form-data; boundary=AaB03x" body
+  in
+  check
+    (result reject multipart_error)
+    "malformed body" (Error Choku.Multipart.Malformed_body)
+    (Choku.Multipart.of_request_limited
+       ~max_size:(String.length multipart_body)
+       request)
+
 let test_of_request_limited_rejects_negative_max_size () =
   let request =
     request ~content_type:"multipart/form-data; boundary=AaB03x" multipart_body
@@ -558,6 +590,32 @@ let test_streaming_iter_request_rejects_missing_final_boundary () =
     (Choku.Multipart.Streaming.iter_request request ~on_part:(fun _ source ->
          ignore (Eio.Flow.read_all source : string)))
 
+let test_streaming_iter_request_rejects_body_protocol_errors () =
+  let malformed_body =
+    Choku.Body.Internal.streaming (malformed_body_source ())
+  in
+  let malformed_request =
+    request_with_body ~content_type:"multipart/form-data; boundary=AaB03x"
+      malformed_body
+  in
+  check
+    (result reject multipart_error)
+    "malformed body" (Error Choku.Multipart.Malformed_body)
+    (Choku.Multipart.Streaming.iter_request malformed_request
+       ~on_part:(fun _ _ -> fail "handler should not run"));
+  let too_large_body =
+    Choku.Body.Internal.streaming (body_too_large_source ())
+  in
+  let too_large_request =
+    request_with_body ~content_type:"multipart/form-data; boundary=AaB03x"
+      too_large_body
+  in
+  check
+    (result reject multipart_error)
+    "body too large" (Error Choku.Multipart.Body_too_large)
+    (Choku.Multipart.Streaming.iter_request too_large_request
+       ~on_part:(fun _ _ -> fail "handler should not run"))
+
 let test_streaming_iter_request_preserves_boundary_like_body () =
   let body =
     "--AaB03x\r\n\
@@ -675,6 +733,8 @@ let () =
             test_of_request_limited_rejects_malformed_body;
           test_case "of_request_limited rejects unexpected end of body" `Quick
             test_of_request_limited_rejects_unexpected_end_of_body;
+          test_case "of_request_limited rejects malformed streaming body" `Quick
+            test_of_request_limited_rejects_malformed_streaming_body;
           test_case "of_request_limited rejects negative max_size" `Quick
             test_of_request_limited_rejects_negative_max_size;
           test_case
@@ -707,6 +767,8 @@ let () =
             test_streaming_iter_request_allows_split_header_terminator_at_limit;
           test_case "streaming iter_request rejects missing final boundary"
             `Quick test_streaming_iter_request_rejects_missing_final_boundary;
+          test_case "streaming iter_request rejects body protocol errors" `Quick
+            test_streaming_iter_request_rejects_body_protocol_errors;
           test_case "streaming iter_request preserves boundary-like body" `Quick
             test_streaming_iter_request_preserves_boundary_like_body;
           test_case "streaming iter_request handles split boundary" `Quick

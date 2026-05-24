@@ -7,6 +7,7 @@ type error =
   | Malformed_header
   | Invalid_content_length
   | Body_too_large
+  | Malformed_chunked_body
   | Request_head_too_large
   | Request_head_timeout
   | Unsupported_transfer_encoding
@@ -23,6 +24,10 @@ end
 
 type request_head = { meth : Method.t; target : string; headers : Headers.t }
 (** Parsed HTTP/1.1 request head without body bytes. *)
+
+(** HTTP/1.1 request body framing selected from Content-Length or
+    Transfer-Encoding. *)
+type request_body_framing = Fixed of int | Chunked
 
 val parse_request_head_string : string -> (request_head, error) result
 (** [parse_request_head_string raw] parses an HTTP/1.1 request head block.
@@ -49,3 +54,6 @@ val response_for_error : error -> Response.t
 
 val content_length : Headers.t -> (int, error) result
 (** [content_length headers] validates and returns the request body length. *)
+
+val request_body_framing : Headers.t -> (request_body_framing, error) result
+(** [request_body_framing headers] validates request body framing. *)

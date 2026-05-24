@@ -5,6 +5,7 @@ type error =
   | Malformed_header
   | Invalid_content_length
   | Body_too_large
+  | Malformed_chunked_body
   | Request_head_too_large
   | Request_head_timeout
   | Unsupported_transfer_encoding
@@ -16,6 +17,7 @@ let error_to_string = function
   | Malformed_header -> "malformed header"
   | Invalid_content_length -> "invalid content-length"
   | Body_too_large -> "body too large"
+  | Malformed_chunked_body -> "malformed chunked body"
   | Request_head_too_large -> "request head too large"
   | Request_head_timeout -> "request head timeout"
   | Unsupported_transfer_encoding -> "unsupported transfer-encoding"
@@ -28,6 +30,7 @@ module Error = struct
 end
 
 type request_head = { meth : Method.t; target : string; headers : Headers.t }
+type request_body_framing = Fixed of int | Chunked
 
 let default_max_request_body_size = 1_048_576
 
@@ -82,23 +85,6 @@ let validate_host headers =
   | [ host ] when not (String.equal (String.trim host) "") -> Ok ()
   | _ -> Error Malformed_header
 
-let parse_request_head_string raw =
-  match split_lines raw with
-  | [] -> Error Invalid_request_line
-  | request_line :: header_lines -> (
-      match parse_request_line (String.split_on_char ' ' request_line) with
-      | Error error -> Error error
-      | Ok (meth, target) -> (
-          match parse_headers header_lines with
-          | Error error -> Error error
-          | Ok headers -> (
-              match validate_host headers with
-              | Error error -> Error error
-              | Ok () -> (
-                  match Headers.get "transfer-encoding" headers with
-                  | Some _ -> Error Unsupported_transfer_encoding
-                  | None -> Ok { meth; target; headers }))))
-
 let is_digit = function '0' .. '9' -> true | _ -> false
 
 let parse_content_length_value value =
@@ -122,6 +108,51 @@ let content_length headers =
           in
           if same then Ok length else Error Invalid_content_length)
 
+let split_transfer_encoding value =
+  value |> String.split_on_char ',' |> List.map String.trim
+
+let transfer_encoding headers =
+  match Headers.get_all "transfer-encoding" headers with
+  | [] -> Ok None
+  | values ->
+      let codings = List.concat_map split_transfer_encoding values in
+      let valid_singleton_chunked =
+        match codings with
+        | [ coding ] -> String.equal (String.lowercase_ascii coding) "chunked"
+        | _ -> false
+      in
+      if valid_singleton_chunked then Ok (Some Chunked)
+      else Error Unsupported_transfer_encoding
+
+let request_body_framing headers =
+  match transfer_encoding headers with
+  | Error error -> Error error
+  | Ok (Some Chunked) ->
+      if Headers.get_all "content-length" headers = [] then Ok Chunked
+      else Error Unsupported_transfer_encoding
+  | Ok (Some (Fixed _)) -> assert false
+  | Ok None -> (
+      match content_length headers with
+      | Ok length -> Ok (Fixed length)
+      | Error error -> Error error)
+
+let parse_request_head_string raw =
+  match split_lines raw with
+  | [] -> Error Invalid_request_line
+  | request_line :: header_lines -> (
+      match parse_request_line (String.split_on_char ' ' request_line) with
+      | Error error -> Error error
+      | Ok (meth, target) -> (
+          match parse_headers header_lines with
+          | Error error -> Error error
+          | Ok headers -> (
+              match validate_host headers with
+              | Error error -> Error error
+              | Ok () -> (
+                  match request_body_framing headers with
+                  | Error error -> Error error
+                  | Ok _ -> Ok { meth; target; headers }))))
+
 let make_request ~meth ~target ~headers ~body =
   try Request.make ~meth ~target ~headers ~body |> Result.ok
   with Invalid_argument _ -> Error Unsupported_request_target
@@ -137,9 +168,9 @@ let parse_request_string
       | Ok { meth; target; headers } -> (
           let body_start = header_end + 4 in
           let available_body = String.length raw - body_start |> max 0 in
-          match content_length headers with
+          match request_body_framing headers with
           | Error error -> Error error
-          | Ok body_length ->
+          | Ok (Fixed body_length) ->
               if body_length > max_request_body_size then Error Body_too_large
               else if available_body < body_length then
                 Error Invalid_content_length
@@ -147,7 +178,18 @@ let parse_request_string
                 let body =
                   String.sub raw body_start body_length |> Body.string
                 in
-                make_request ~meth ~target ~headers ~body))
+                make_request ~meth ~target ~headers ~body
+          | Ok Chunked -> (
+              let encoded_body = String.sub raw body_start available_body in
+              match
+                Http1_chunked.decode_string ~max_body_size:max_request_body_size
+                  encoded_body
+              with
+              | Ok decoded ->
+                  make_request ~meth ~target ~headers
+                    ~body:(Body.string decoded)
+              | Error Http1_chunked.Body_too_large -> Error Body_too_large
+              | Error Http1_chunked.Malformed -> Error Malformed_chunked_body)))
 
 let serialize_response ?(include_body = true) response =
   let body = Response.body response |> Body.to_string in
@@ -179,5 +221,6 @@ let response_for_error = function
   | Request_head_timeout ->
       plain_error Status.request_timeout "Request Timeout\n"
   | Invalid_request_line | Unsupported_http_version | Unsupported_request_target
-  | Malformed_header | Invalid_content_length | Unsupported_transfer_encoding ->
+  | Malformed_header | Invalid_content_length | Malformed_chunked_body
+  | Unsupported_transfer_encoding ->
       plain_error Status.bad_request "Bad Request\n"

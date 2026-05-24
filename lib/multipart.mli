@@ -170,9 +170,10 @@ val of_request_limited : max_size:int -> Request.t -> (t, error) result
     This is the bounded request helper for code that may receive streaming
     request bodies.
 
-    Returns [Error Body_too_large] when the request body exceeds [max_size] and
-    [Error Unexpected_end_of_body] when a streaming request body ends before its
-    declared length.
+    Returns [Error Body_too_large] when the request body exceeds [max_size],
+    [Error Unexpected_end_of_body] when a fixed-length streaming request body
+    ends before its declared length, and [Error Malformed_body] when a streaming
+    protocol source reports invalid body framing.
 
     @raise Invalid_argument if [max_size] is negative. *)
 

@@ -409,9 +409,141 @@ let test_run_streaming_unsupported_transfer_encoding () =
       ]
   in
   let response =
-    with_server ~request_body_mode:Choku.Server.Streaming
-      (fun _ -> fail "handler should not run")
+    with_server ~max_request_body_size:4
+      ~request_body_mode:Choku.Server.Streaming
+      (fun req ->
+        check bool "streaming" false
+          (Choku.Body.is_buffered (Choku.Request.body req));
+        check
+          (result string (of_pp Choku.Body.pp_error))
+          "body" (Ok "ping")
+          (Choku.Body.to_string_limited ~max_size:4 (Choku.Request.body req));
+        Choku.Response.text "ok\n")
       (request raw)
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
+let test_run_buffered_chunked_request () =
+  require_network ();
+  let raw =
+    String.concat ""
+      [
+        "POST / HTTP/1.1\r\n";
+        "Host: example.test\r\n";
+        "Transfer-Encoding: chunked\r\n";
+        "\r\n";
+        "4\r\n";
+        "Wiki\r\n";
+        "5;ignored=yes\r\n";
+        "pedia\r\n";
+        "0\r\n";
+        "X-Trailer: ignored\r\n";
+        "\r\n";
+      ]
+  in
+  let response =
+    with_server ~max_request_body_size:9
+      (fun req ->
+        check bool "buffered" true
+          (Choku.Body.is_buffered (Choku.Request.body req));
+        check string "body" "Wikipedia"
+          (Choku.Body.to_string (Choku.Request.body req));
+        Choku.Response.text "ok\n")
+      (request raw)
+  in
+  check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
+
+let test_run_buffered_chunked_payload_too_large () =
+  require_network ();
+  let response =
+    with_server ~max_request_body_size:4
+      (fun _ -> fail "handler should not run")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: chunked\r\n\
+          \r\n\
+          5\r\n\
+          hello\r\n\
+          0\r\n\
+          \r\n")
+  in
+  check bool "413" true
+    (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
+
+let test_run_streaming_chunked_payload_too_large () =
+  require_network ();
+  let response =
+    with_server ~max_request_body_size:4
+      ~request_body_mode:Choku.Server.Streaming
+      (fun req ->
+        match
+          Choku.Body.with_source (Choku.Request.body req) Eio.Flow.read_all
+        with
+        | _ -> Choku.Response.text "unexpected\n"
+        | exception Choku.Body.Body_too_large_read ->
+            Choku.Response.text ~status:Choku.Status.payload_too_large
+              "too large\n")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: chunked\r\n\
+          \r\n\
+          5\r\n\
+          hello\r\n\
+          0\r\n\
+          \r\n")
+  in
+  check bool "413" true
+    (String.starts_with ~prefix:"HTTP/1.1 413 Payload Too Large" response)
+
+let test_run_streaming_chunked_malformed_uncaught_maps_400 () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Choku.Server.Streaming
+      (fun req ->
+        Choku.Body.with_source (Choku.Request.body req) Eio.Flow.read_all
+        |> Choku.Response.text)
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: chunked\r\n\
+          \r\n\
+          nope\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
+let test_run_streaming_chunked_malformed_to_string_limited () =
+  require_network ();
+  let response =
+    with_server ~request_body_mode:Choku.Server.Streaming
+      (fun req ->
+        check
+          (result string (of_pp Choku.Body.pp_error))
+          "body" (Error Choku.Body.Malformed_body)
+          (Choku.Body.to_string_limited ~max_size:4 (Choku.Request.body req));
+        Choku.Response.text ~status:Choku.Status.bad_request "bad body\n")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: chunked\r\n\
+          \r\n\
+          nope\r\n")
+  in
+  check bool "400" true
+    (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
+
+let test_run_unsupported_transfer_coding () =
+  require_network ();
+  let response =
+    with_server
+      (fun _ -> fail "handler should not run")
+      (request
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: gzip\r\n\
+          \r\n")
   in
   check bool "400" true
     (String.starts_with ~prefix:"HTTP/1.1 400 Bad Request" response)
@@ -994,6 +1126,18 @@ let () =
             test_run_streaming_payload_too_large;
           test_case "run streaming unsupported transfer encoding" `Quick
             test_run_streaming_unsupported_transfer_encoding;
+          test_case "run buffered chunked request" `Quick
+            test_run_buffered_chunked_request;
+          test_case "run buffered chunked payload too large" `Quick
+            test_run_buffered_chunked_payload_too_large;
+          test_case "run streaming chunked payload too large" `Quick
+            test_run_streaming_chunked_payload_too_large;
+          test_case "run streaming chunked malformed uncaught maps 400" `Quick
+            test_run_streaming_chunked_malformed_uncaught_maps_400;
+          test_case "run streaming chunked malformed to_string_limited" `Quick
+            test_run_streaming_chunked_malformed_to_string_limited;
+          test_case "run unsupported transfer coding" `Quick
+            test_run_unsupported_transfer_coding;
           test_case "run rejects transfer-encoding content-length smuggling"
             `Quick test_run_rejects_transfer_encoding_content_length_smuggling;
           test_case "run rejects malformed folded header" `Quick

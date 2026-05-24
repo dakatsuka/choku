@@ -36,6 +36,7 @@ None.
 - [Add HTTP Security Regression Tests](completed/0021-add-http-security-regression-tests.md)
 - [Design HTTP Request Limits And Timeouts](completed/0022-design-http-request-limits-and-timeouts.md)
 - [Tighten HTTP/1.1 Request Semantics](completed/0023-tighten-http1-request-semantics.md)
+- [Implement HTTP/1.1 Chunked Request Bodies](completed/0024-implement-http1-chunked-request-bodies.md)
 
 ## When To Create A Plan
 

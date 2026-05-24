@@ -41,7 +41,7 @@ let test_parse_request_head () =
 
 let test_parse_request_head_rejects_transfer_encoding () =
   let raw =
-    "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked"
+    "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: gzip"
   in
   check
     (result reject (module Choku.Http1.Error))
@@ -60,15 +60,92 @@ let test_parse_content_length_body () =
   check string "body" "hello"
     (Choku.Body.to_string (Choku.Request.body request))
 
-let test_reject_chunked () =
+let test_parse_chunked_body () =
+  let request =
+    parse_ok
+      "POST / HTTP/1.1\r\n\
+       Host: example.test\r\n\
+       Transfer-Encoding: Chunked\r\n\
+       \r\n\
+       4\r\n\
+       Wiki\r\n\
+       5;ext=value\r\n\
+       pedia\r\n\
+       0\r\n\
+       X-Trailer: ignored\r\n\
+       \r\n"
+  in
+  check string "body" "Wikipedia"
+    (Choku.Body.to_string (Choku.Request.body request))
+
+let test_reject_malformed_chunked_body () =
   check
     (module Choku.Http1.Error)
-    "error" Choku.Http1.Unsupported_transfer_encoding
+    "error" Choku.Http1.Malformed_chunked_body
     (parse_error
        "POST / HTTP/1.1\r\n\
         Host: example.test\r\n\
         Transfer-Encoding: chunked\r\n\
-        \r\n")
+        \r\n\
+        nope\r\n");
+  check
+    (module Choku.Http1.Error)
+    "overflow" Choku.Http1.Body_too_large
+    (match
+       Choku.Http1.parse_request_string ~max_request_body_size:4
+         "POST / HTTP/1.1\r\n\
+          Host: example.test\r\n\
+          Transfer-Encoding: chunked\r\n\
+          \r\n\
+          ffffffffffffffffffffffffffffffff\r\n"
+     with
+    | Ok _ -> fail "expected parse error"
+    | Error error -> error)
+
+let test_reject_unsupported_transfer_coding () =
+  let cases =
+    [
+      "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: gzip\r\n\r\n";
+      "POST / HTTP/1.1\r\n\
+       Host: example.test\r\n\
+       Transfer-Encoding: gzip, chunked\r\n\
+       \r\n\
+       0\r\n\
+       \r\n";
+      "POST / HTTP/1.1\r\n\
+       Host: example.test\r\n\
+       Transfer-Encoding: chunked, gzip\r\n\
+       \r\n";
+      "POST / HTTP/1.1\r\n\
+       Host: example.test\r\n\
+       Transfer-Encoding: chunked;foo=bar\r\n\
+       \r\n";
+      "POST / HTTP/1.1\r\n\
+       Host: example.test\r\n\
+       Transfer-Encoding: chunked\r\n\
+       Transfer-Encoding: chunked\r\n\
+       \r\n";
+    ]
+  in
+  List.iter
+    (fun raw ->
+      check
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Unsupported_transfer_encoding (parse_error raw))
+    cases
+
+let test_reject_oversized_chunk_metadata () =
+  let extension = String.make 70_000 'x' in
+  let raw =
+    "POST / HTTP/1.1\r\n\
+     Host: example.test\r\n\
+     Transfer-Encoding: chunked\r\n\
+     \r\n\
+     0;" ^ extension ^ "\r\n\r\n"
+  in
+  check
+    (module Choku.Http1.Error)
+    "error" Choku.Http1.Malformed_chunked_body (parse_error raw)
 
 let test_reject_invalid_host () =
   let cases =
@@ -282,7 +359,13 @@ let () =
             test_parse_request_head_rejects_transfer_encoding;
           test_case "parse Content-Length body" `Quick
             test_parse_content_length_body;
-          test_case "reject chunked" `Quick test_reject_chunked;
+          test_case "parse chunked body" `Quick test_parse_chunked_body;
+          test_case "reject malformed chunked body" `Quick
+            test_reject_malformed_chunked_body;
+          test_case "reject unsupported transfer coding" `Quick
+            test_reject_unsupported_transfer_coding;
+          test_case "reject oversized chunk metadata" `Quick
+            test_reject_oversized_chunk_metadata;
           test_case "reject invalid Host" `Quick test_reject_invalid_host;
           test_case "reject invalid Content-Length" `Quick
             test_reject_invalid_content_length;

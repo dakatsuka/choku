@@ -7,12 +7,20 @@ type t
     buffered values. Server-created streaming request bodies are
     single-consumption and handler-scoped. *)
 
-(** Errors returned while consuming body bytes. *)
-type error = Body_too_large | Unexpected_end_of_body
+(** Errors returned while consuming body bytes. [Malformed_body] means a
+    streaming protocol source reported invalid body framing. *)
+type error = Body_too_large | Unexpected_end_of_body | Malformed_body
 
 exception Unexpected_end_of_body_read
 (** Raised by streaming body sources when the underlying request stream ends
     before the declared body length. *)
+
+exception Body_too_large_read
+(** Raised by streaming body sources when decoded bytes exceed the configured
+    body limit. *)
+
+exception Malformed_body_read
+(** Raised by streaming body sources when body framing is malformed. *)
 
 val empty : t
 (** [empty] is a zero-length body. *)
@@ -37,6 +45,9 @@ val to_string_limited : max_size:int -> t -> (string, error) result
     Returns [Error Unexpected_end_of_body] when a streaming body ends before its
     declared length.
 
+    Returns [Error Malformed_body] when a streaming protocol source reports
+    invalid body framing.
+
     @raise Invalid_argument if [max_size] is negative. *)
 
 val is_buffered : t -> bool
@@ -51,7 +62,11 @@ val with_source : t -> (Eio.Flow.source_ty Eio.Resource.t -> 'a) -> 'a
     handler.
 
     @raise Unexpected_end_of_body_read
-      if a streaming source ends before its declared length. *)
+      if a streaming source ends before its declared length.
+    @raise Body_too_large_read
+      if a streaming source reports decoded body-size overflow.
+    @raise Malformed_body_read
+      if a streaming source reports invalid body framing. *)
 
 val copy_to_sink : t -> _ Eio.Flow.sink -> unit
 (** [copy_to_sink t sink] writes [t]'s bytes to [sink]. *)
@@ -66,13 +81,13 @@ val pp_error : Format.formatter -> error -> unit
 (**/**)
 
 module Internal : sig
-  val streaming : content_length:int -> Eio.Flow.source_ty Eio.Resource.t -> t
+  val streaming : ?content_length:int -> Eio.Flow.source_ty Eio.Resource.t -> t
   [@@alert internal "Choku internal API; do not use outside the library."]
-  (** [streaming ~content_length source] creates a single-consumption body
+  (** [streaming ?content_length source] creates a single-consumption body
       backed by [source].
 
-      [source] must produce at most [content_length] bytes and then report
-      end-of-file. *)
+      When [content_length] is provided, [source] must produce at most
+      [content_length] bytes and then report end-of-file. *)
 end
 
 (**/**)

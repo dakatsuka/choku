@@ -26,7 +26,7 @@ designed.
 - HTTP/2 or HTTP/3.
 - Router DSL.
 - Keep-alive and request pipelining.
-- Chunked request or response bodies.
+- Chunked response bodies.
 - Trailers.
 - Connection upgrade or WebSocket.
 - Compression.
@@ -41,8 +41,8 @@ designed.
 - HTTP/1.1 requests must contain exactly one non-empty `Host` header. Missing,
   empty, or duplicate `Host` headers are rejected before handler invocation.
 - The server parses headers using the shared `Headers.t` contract.
-- The server supports request bodies only when `Content-Length` is present and
-  valid.
+- The server supports request bodies framed by a valid `Content-Length` or by
+  `Transfer-Encoding: chunked`.
 - Request bodies are buffered and replayable as `Body.t` by default.
 - When `Server.create ?request_body_mode:Streaming` is used, request bodies are
   single-consumption and backed by an Eio source scoped to the handler
@@ -53,13 +53,21 @@ designed.
 - Requests whose declared or decoded body exceeds the maximum size do not invoke
   the handler. When possible, the server responds with `413 Payload Too Large`,
   `connection: close`, and then closes the connection.
-- Streaming request bodies are capped to the declared `Content-Length`. The
-  server does not expose bytes beyond that body length to the handler.
+- Fixed-length streaming request bodies are capped to the declared
+  `Content-Length`. Chunked streaming request bodies are decoded by the protocol
+  source and capped by the configured decoded body limit.
 - If a streaming body ends before the declared `Content-Length`,
   `Body.to_string_limited` returns `Unexpected_end_of_body`; lower-level source
   consumers observe `Body.Unexpected_end_of_body_read` from the source.
 - The server rejects unsupported request-target forms before handler invocation.
-- The server rejects unsupported transfer encodings before handler invocation.
+- The server accepts `Transfer-Encoding: chunked` request bodies, rejects
+  unsupported transfer encodings before handler invocation, and rejects requests
+  that include both `Transfer-Encoding` and `Content-Length`.
+- Chunked request bodies are decoded before reaching handlers. Chunk extensions
+  are tolerated but ignored, and trailers are read to complete the body but are
+  not exposed through `Request.t`.
+- Chunk-size lines, chunk extensions, and trailer-section bytes are bounded by a
+  per-request chunk metadata budget equal to `max_request_head_size`.
 - Responses are serialized with a status line, headers, and buffered body.
   Explicit `HEAD` requests preserve the serialized `Content-Length` that a `GET`
   response would have used, but do not write response body bytes.
@@ -80,8 +88,10 @@ designed.
 | Malformed header field | No | `400 Bad Request` | Close |
 | Missing, empty, or duplicate `Host` | No | `400 Bad Request` | Close |
 | Invalid `Content-Length` | No | `400 Bad Request` | Close |
-| Body larger than `max_request_body_size` | No | `413 Payload Too Large` | Close |
-| Unsupported `Transfer-Encoding` | No | `400 Bad Request` | Close |
+| Malformed chunked body | No, unless already in streaming body consumption | `400 Bad Request` or `Body.Malformed_body`/`Body.Malformed_body_read` | Close |
+| Declared, buffered, or pre-handler body larger than `max_request_body_size` | No | `413 Payload Too Large` | Close |
+| Streaming chunked body larger than `max_request_body_size` | Yes, if discovered during consumption | `Body.Body_too_large`/`Body.Body_too_large_read`; uncaught handler exception maps to `413 Payload Too Large` | Close |
+| Unsupported or ambiguous `Transfer-Encoding` | No | `400 Bad Request` | Close |
 | Handler raises non-cancellation exception before response writing | Yes | `500 Internal Server Error` | Close |
 | Handler raises `Eio.Cancel.Cancelled _` | Yes | No synthesized response | Preserve cancellation |
 

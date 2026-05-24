@@ -6,7 +6,9 @@ type t
 
     [Buffered] reads the full request body before invoking the handler and keeps
     it replayable. [Streaming] invokes the handler with a single-consumption
-    body source capped to the request's declared [Content-Length]. *)
+    body source. Fixed-length streaming bodies are capped to the declared
+    [Content-Length]; chunked streaming bodies are decoded by the protocol
+    source and capped by the configured decoded body limit. *)
 type request_body_mode = Request_body_mode.t = Buffered | Streaming
 
 val create :

@@ -17,6 +17,7 @@ milestone is a minimal HTTP/1.1 server over plain TCP with:
 - `Connection: close` behavior;
 - buffered and replayable request bodies by default;
 - opt-in streaming request bodies;
+- `Content-Length` and `Transfer-Encoding: chunked` request bodies;
 - a low-level `Handler.t = Request.t -> Response.t` contract;
 - middleware as `Handler.t -> Handler.t`;
 - an optional method-and-path router;

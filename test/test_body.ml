@@ -61,6 +61,21 @@ let test_to_string_limited_streaming_short_body () =
     "short body" (Error Choku.Body.Unexpected_end_of_body)
     (Choku.Body.to_string_limited ~max_size:5 body)
 
+let test_to_string_limited_streaming_unknown_length () =
+  let body = Choku.Body.Internal.streaming (Eio.Flow.string_source "hello") in
+  check bool "streaming" false (Choku.Body.is_buffered body);
+  check
+    (result string (of_pp Choku.Body.pp_error))
+    "read" (Ok "hello")
+    (Choku.Body.to_string_limited ~max_size:5 body)
+
+let test_to_string_limited_streaming_unknown_length_too_large () =
+  let body = Choku.Body.Internal.streaming (Eio.Flow.string_source "hello") in
+  check
+    (result string (of_pp Choku.Body.pp_error))
+    "too large" (Error Choku.Body.Body_too_large)
+    (Choku.Body.to_string_limited ~max_size:4 body)
+
 let test_streaming_to_string_raises () =
   let body =
     Choku.Body.Internal.streaming ~content_length:5
@@ -74,7 +89,9 @@ let test_pp_error () =
   check string "body too large" "body too large"
     (Format.asprintf "%a" Choku.Body.pp_error Choku.Body.Body_too_large);
   check string "unexpected end of body" "unexpected end of body"
-    (Format.asprintf "%a" Choku.Body.pp_error Choku.Body.Unexpected_end_of_body)
+    (Format.asprintf "%a" Choku.Body.pp_error Choku.Body.Unexpected_end_of_body);
+  check string "malformed body" "malformed body"
+    (Format.asprintf "%a" Choku.Body.pp_error Choku.Body.Malformed_body)
 
 let test_body_source () =
   let body = Choku.Body.string "hello" in
@@ -120,6 +137,10 @@ let () =
             test_to_string_limited_streaming_too_large;
           test_case "to_string_limited streaming short body" `Quick
             test_to_string_limited_streaming_short_body;
+          test_case "to_string_limited streaming unknown length" `Quick
+            test_to_string_limited_streaming_unknown_length;
+          test_case "to_string_limited streaming unknown length too large"
+            `Quick test_to_string_limited_streaming_unknown_length_too_large;
           test_case "streaming to_string raises" `Quick
             test_streaming_to_string_raises;
           test_case "pp_error" `Quick test_pp_error;

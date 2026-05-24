@@ -1,5 +1,5 @@
 (library
  (name choku)
  (public_name choku)
- (private_modules http1_wire request_target)
+ (private_modules http1_chunked http1_wire request_target)
  (libraries eio))

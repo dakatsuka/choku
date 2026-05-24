@@ -556,7 +556,9 @@ module Streaming = struct
         with
         | Streaming_malformed_body -> Error Malformed_body
         | Streaming_unexpected_end_of_body | Body.Unexpected_end_of_body_read ->
-            Error Unexpected_end_of_body)
+            Error Unexpected_end_of_body
+        | Body.Malformed_body_read -> Error Malformed_body
+        | Body.Body_too_large_read -> Error Body_too_large)
 end
 
 let parse_after_boundary body index =
@@ -618,7 +620,8 @@ let of_request_limited ~max_size request =
       match Body.to_string_limited ~max_size (Request.body request) with
       | Ok body -> decode ~boundary body
       | Error Body.Body_too_large -> Error Body_too_large
-      | Error Body.Unexpected_end_of_body -> Error Unexpected_end_of_body)
+      | Error Body.Unexpected_end_of_body -> Error Unexpected_end_of_body
+      | Error Body.Malformed_body -> Error Malformed_body)
 
 let pp_error formatter = function
   | Missing_content_type ->
