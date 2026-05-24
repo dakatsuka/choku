@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Implement Phase 1 of `Camelio.Multipart`: a buffered parser for
+Implement Phase 1 of `Choku.Multipart`: a buffered parser for
 `multipart/form-data` request bodies with ordered parts, part metadata, and
 structured parse errors.
 
@@ -37,7 +37,7 @@ Create public signatures and block comments for:
 - ordered part accessors;
 - error formatter.
 
-Update the public `Camelio` module and dune/test layout after the interface is
+Update the public `Choku` module and dune/test layout after the interface is
 defined.
 
 ## Steps
@@ -53,7 +53,7 @@ defined.
 
 ## Decisions
 
-- Add `Camelio.Multipart` as a new top-level module.
+- Add `Choku.Multipart` as a new top-level module.
 - Keep `Multipart.t` abstract and ordered.
 - Represent Phase 1 part bodies with existing buffered `Body.t`.
 - Keep URL-encoded `Form` separate from multipart parts.
@@ -69,12 +69,12 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 ## Completion Notes
 
-Implemented `Camelio.Multipart` Phase 1 with buffered multipart/form-data
+Implemented `Choku.Multipart` Phase 1 with buffered multipart/form-data
 parsing, request `Content-Type` and boundary handling, ordered parts, part
 metadata accessors, structured errors, and error formatting. Eio streaming
 upload behavior remains deferred to later phases.

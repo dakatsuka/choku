@@ -24,7 +24,7 @@ temporary filenames.
 
 ## Implications
 
-Camelio should keep raw multipart filenames available as metadata, but must not
+Choku should keep raw multipart filenames available as metadata, but must not
 derive storage paths from them automatically. Filename sanitization helpers are
 appropriate as pure candidate/display-name utilities. Actual upload storage
 policy, generated storage names, overwrite behavior, content validation, and

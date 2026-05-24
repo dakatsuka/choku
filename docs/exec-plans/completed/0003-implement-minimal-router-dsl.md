@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Implement `Camelio.Router`, an optional method-and-path routing layer that
+Implement `Choku.Router`, an optional method-and-path routing layer that
 compiles to `Handler.t` and supports static paths plus simple named path
 parameters.
 
@@ -40,7 +40,7 @@ Create public signatures and block comments for:
 - route registration functions;
 - `Router.to_handler`.
 
-Update the public `Camelio` module and dune/test layout after the interface is
+Update the public `Choku` module and dune/test layout after the interface is
 defined.
 
 ## Steps
@@ -60,7 +60,7 @@ defined.
 
 ## Decisions
 
-- Add `Camelio.Router` as a new top-level module.
+- Add `Choku.Router` as a new top-level module.
 - Use a router-specific `route_handler = Params.t -> Request.t -> Response.t`.
 - Keep `Request.t` unchanged.
 - Match routes in insertion order.
@@ -79,7 +79,7 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 Network integration tests are not required for the router because it should be
@@ -87,7 +87,7 @@ testable through `Router.to_handler` without sockets.
 
 ## Completion Notes
 
-Implemented `Camelio.Router` with immutable route registration, first-match
+Implemented `Choku.Router` with immutable route registration, first-match
 method/path routing, static and named-parameter path patterns, configurable
 not-found handling, and `Router.to_handler`. Context-free code review reported
 no blocking findings; low-severity feedback about keeping the source pattern and

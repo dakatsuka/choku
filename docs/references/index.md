@@ -21,7 +21,7 @@ repository.
 - For actively developed library manuals, keep a repository-local reference card
   with canonical URLs, access date, observed version, update policy, and the
   specific API areas that agents should inspect before implementation.
-- Pin exact behavior in Camelio specs or design docs when relying on it. Treat
+- Pin exact behavior in Choku specs or design docs when relying on it. Treat
   external documentation links as live references, not permanent requirements.
 
 ## Reference Template

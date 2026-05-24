@@ -72,7 +72,7 @@ module Internal : sig
   (** Pre-body route match result used by server integration. *)
 
   val match_route : meth:Method.t -> target:string -> t -> matched_route option
-  [@@alert internal "Camelio internal API; do not use outside the library."]
+  [@@alert internal "Choku internal API; do not use outside the library."]
   (** [match_route ~meth ~target router] returns the first route matching [meth]
       and the query-stripped [target], if any. *)
 end

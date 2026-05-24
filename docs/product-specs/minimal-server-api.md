@@ -6,7 +6,7 @@ Draft
 
 ## Problem
 
-Camelio needs an initial public API that lets OCaml 5.4 users run a small
+Choku needs an initial public API that lets OCaml 5.4 users run a small
 Eio-native HTTP server before higher-level routing DSLs exist.
 
 ## Goals
@@ -36,7 +36,7 @@ Eio-native HTTP server before higher-level routing DSLs exist.
   `a (b h)`, so `a` observes the request first and response last.
 - Server startup accepts an Eio switch, Eio network capability, socket address,
   and handler-backed server value.
-- The caller owns the Eio switch passed to the server. Camelio attaches listener
+- The caller owns the Eio switch passed to the server. Choku attaches listener
   resources and connection fibers to that switch, but does not close it.
 - Applications may use Eio capabilities captured by closure inside handlers.
 - The API must not expose `Lwt.t`, `Async.Deferred.t`, `cohttp` types, or
@@ -128,7 +128,7 @@ Middleware shape:
 let add_server_header next request =
   request
   |> next
-  |> Response.with_header "server" "camelio"
+  |> Response.with_header "server" "choku"
 ```
 
 Future router compatibility:

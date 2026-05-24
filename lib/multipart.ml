@@ -103,7 +103,7 @@ module Tempfile = struct
   let generated_name random =
     let bytes = Cstruct.create 16 in
     Eio.Flow.read_exact random bytes;
-    "camelio-upload-" ^ hex bytes ^ ".tmp"
+    "choku-upload-" ^ hex bytes ^ ".tmp"
 
   let copy_counting source sink =
     let scratch = Cstruct.create 8192 in

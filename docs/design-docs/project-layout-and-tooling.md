@@ -6,7 +6,7 @@ Draft
 
 ## Context
 
-Camelio needs a small OCaml project structure before implementation starts. The
+Choku needs a small OCaml project structure before implementation starts. The
 repository currently contains design and product documentation only. The first
 implementation milestone should introduce build, test, formatting, and source
 layout together so later agents can follow a stable convention.
@@ -33,7 +33,7 @@ The first implementation plan should create this layout:
 
 ```text
 lib/
-  camelio.ml
+  choku.ml
   method.ml
   method.mli
   headers.ml
@@ -75,10 +75,10 @@ Each implementation module should have a corresponding `.mli` once it exposes a
 public contract. Public interfaces must use block comments for contracts and
 behavior.
 
-The public module shape is top-level under the `Camelio` library:
-`Camelio.Method`, `Camelio.Headers`, `Camelio.Status`, `Camelio.Body`,
-`Camelio.Request`, `Camelio.Response`, `Camelio.Handler`,
-`Camelio.Middleware`, `Camelio.Http1`, and `Camelio.Server`.
+The public module shape is top-level under the `Choku` library:
+`Choku.Method`, `Choku.Headers`, `Choku.Status`, `Choku.Body`,
+`Choku.Request`, `Choku.Response`, `Choku.Handler`,
+`Choku.Middleware`, `Choku.Http1`, and `Choku.Server`.
 
 ## Tooling
 
@@ -90,7 +90,7 @@ The first implementation plan should introduce:
 - `examples/dune`;
 - `.ocamlformat`;
 - `.github/workflows/ci.yml`;
-- `camelio.opam`, generated from `dune-project`.
+- `choku.opam`, generated from `dune-project`.
 
 Initial dependencies:
 
@@ -110,7 +110,7 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 Run Dune commands sequentially in local and agent-driven harnesses. Dune uses a
@@ -131,11 +131,11 @@ integration tests:
 ```sh
 opam exec -- dune build @all
 opam exec -- dune runtest
-opam exec -- env CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+opam exec -- env CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 opam exec -- dune build @fmt
 opam exec -- dune build @check
 opam exec -- dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 CI may express the workflow as separate steps, but it should not run multiple

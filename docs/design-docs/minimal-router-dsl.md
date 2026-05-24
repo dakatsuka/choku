@@ -6,7 +6,7 @@ Draft
 
 ## Context
 
-Camelio now has a minimal HTTP/1.1 server where `Server.run` invokes a low-level
+Choku now has a minimal HTTP/1.1 server where `Server.run` invokes a low-level
 `Handler.t = Request.t -> Response.t`. The next layer should make small
 applications easier to write while preserving the core design: the server only
 needs a handler, and routing remains optional.
@@ -18,7 +18,7 @@ regex paths, typed converters, route groups, and per-route middleware later.
 
 ## Goals
 
-- Add `Camelio.Router` as an optional layer above `Handler.t`.
+- Add `Choku.Router` as an optional layer above `Handler.t`.
 - Keep `Server` unchanged.
 - Keep route matching deterministic and easy to test without sockets.
 - Keep path parameters out of `Request.t` so shared HTTP values remain useful to
@@ -187,7 +187,7 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
   captures, query ignoring, default not-found, custom not-found, invalid
   patterns including empty segments, and `Params` accessors;
 - run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
-  @check`, `dune build @install`, and `opam lint camelio.opam`;
+  @check`, `dune build @install`, and `opam lint choku.opam`;
 - request context-free implementation review after the code is written.
 
 ## Open Questions

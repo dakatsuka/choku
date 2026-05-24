@@ -30,7 +30,7 @@ Eio exposes `Eio.Time.Timeout.t`, including `Timeout.none`,
 
 ## Implications
 
-Camelio should treat header-size limits and header-read timeout as protocol
+Choku should treat header-size limits and header-read timeout as protocol
 layer controls, not middleware. They must apply before constructing
 `Request.t`, before route-level body-mode selection, and before invoking user
 handlers.

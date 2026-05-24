@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Design how Camelio should support route-level request body delivery modes
+Design how Choku should support route-level request body delivery modes
 without implementing the feature yet.
 
 ## Context

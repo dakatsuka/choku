@@ -6,14 +6,14 @@ Draft
 
 ## Context
 
-Camelio should first establish a small Eio-native HTTP server API before adding
+Choku should first establish a small Eio-native HTTP server API before adding
 a higher-level routing DSL. Languages and frameworks such as Go, Sinatra, Hono,
 and Akka HTTP show that production HTTP stacks often benefit from both low-level
-handler contracts and higher-level routing layers. Camelio should keep that
+handler contracts and higher-level routing layers. Choku should keep that
 separation from the beginning without requiring the routing layer in the first
 milestone.
 
-Eio uses direct style with structured concurrency. Camelio should not expose
+Eio uses direct style with structured concurrency. Choku should not expose
 `Lwt.t`, `Async.Deferred.t`, callback pyramids, or framework-specific routing
 concepts in the core handler contract.
 
@@ -49,8 +49,8 @@ The first public server API should revolve around three concepts:
 
 `Request.t`, `Response.t`, `Method.t`, `Headers.t`, `Status.t`, and `Body.t`
 belong to the shared HTTP value layer, not to the server layer. The first
-milestone exposes them as top-level modules under the `Camelio` library, such as
-`Camelio.Request` and `Camelio.Response`, for ergonomic use. The first milestone
+milestone exposes them as top-level modules under the `Choku` library, such as
+`Choku.Request` and `Choku.Response`, for ergonomic use. The first milestone
 uses them from the server only, but their naming and contracts should avoid
 server-only assumptions so a future `Client` module can reuse them for reverse
 proxy and outbound HTTP use cases.
@@ -93,7 +93,7 @@ module Server : sig
 end
 ```
 
-The caller owns the Eio switch passed to `Server.run`. Camelio attaches the
+The caller owns the Eio switch passed to `Server.run`. Choku attaches the
 listening socket and per-connection fibers to that switch, but does not close the
 switch itself. `Server.run` blocks until the switch is cancelled, the listening
 socket fails, or a future explicit shutdown API requests termination. The first
@@ -138,7 +138,7 @@ layer rather than a server dependency.
 
 ## Client And TLS Compatibility
 
-The first milestone should not include an HTTP client. However, Camelio should
+The first milestone should not include an HTTP client. However, Choku should
 expect to add one because reverse proxy and service-to-service use cases need
 outbound HTTP. The future client should reuse the shared HTTP value types:
 
@@ -172,10 +172,10 @@ HTTP/2 and HTTP/3 are not part of the first server milestone, but the design
 should avoid unnecessary HTTP/1.1 coupling:
 
 - shared HTTP value types are exposed as top-level modules such as
-  `Camelio.Request` and `Camelio.Response`;
-- HTTP/1.1 parsing and encoding belong in `Camelio.Http1`;
+  `Choku.Request` and `Choku.Response`;
+- HTTP/1.1 parsing and encoding belong in `Choku.Http1`;
 - future HTTP/2 framing, stream multiplexing, and flow control should belong in
-  a version-specific module such as `Camelio.Http2`;
+  a version-specific module such as `Choku.Http2`;
 - future HTTP/3 support should be designed separately because it combines HTTP
   semantics with QUIC transport concerns;
 - middleware should not depend on connection-level details that differ across
@@ -440,7 +440,7 @@ end
 module Server : sig
   (** [run ~sw ~net ~addr server] accepts HTTP connections on [addr] using Eio.
 
-      The caller owns [sw]. Camelio attaches listener resources and connection
+      The caller owns [sw]. Choku attaches listener resources and connection
       fibers to that switch, but does not close it. The call runs until [sw] is
       cancelled, the listening socket fails, or a future shutdown API requests
       termination. *)

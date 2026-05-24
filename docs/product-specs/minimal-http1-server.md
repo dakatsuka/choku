@@ -6,7 +6,7 @@ Draft
 
 ## Problem
 
-Camelio needs a deliberately small first implementation target so the core
+Choku needs a deliberately small first implementation target so the core
 server, handler, middleware, and shared HTTP value types can be validated before
 streaming, routing, TLS, client support, or additional HTTP protocol versions are
 designed.
@@ -101,9 +101,9 @@ Expected minimal server shape:
 
 ```ocaml
 let handler request =
-  match Camelio.Request.(meth request, path request) with
-  | Camelio.Method.GET, "/" -> Camelio.Response.text "hello\n"
-  | _ -> Camelio.Response.text ~status:Camelio.Status.not_found "not found\n"
+  match Choku.Request.(meth request, path request) with
+  | Choku.Method.GET, "/" -> Choku.Response.text "hello\n"
+  | _ -> Choku.Response.text ~status:Choku.Status.not_found "not found\n"
 ```
 
 Expected manual check:

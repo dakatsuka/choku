@@ -86,10 +86,10 @@ streaming-capable consuming paths.
 - `dune build @fmt`
 - `dune build @all`
 - `dune runtest`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

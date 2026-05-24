@@ -87,7 +87,7 @@ part source, the iterator drains the remainder to reach the next part.
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

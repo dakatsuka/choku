@@ -67,7 +67,7 @@ val pp_error : Format.formatter -> error -> unit
 
 module Internal : sig
   val streaming : content_length:int -> Eio.Flow.source_ty Eio.Resource.t -> t
-  [@@alert internal "Camelio internal API; do not use outside the library."]
+  [@@alert internal "Choku internal API; do not use outside the library."]
   (** [streaming ~content_length source] creates a single-consumption body
       backed by [source].
 

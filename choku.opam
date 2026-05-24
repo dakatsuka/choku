@@ -2,12 +2,12 @@
 opam-version: "2.0"
 synopsis: "A pure Eio HTTP server for OCaml 5"
 description:
-  "Camelio is an OCaml 5 HTTP server project designed around Eio-native direct-style IO."
-maintainer: ["Camelio contributors"]
-authors: ["Camelio contributors"]
+  "Choku is an OCaml 5 HTTP server project designed around Eio-native direct-style IO."
+maintainer: ["Choku contributors"]
+authors: ["Choku contributors"]
 license: "ISC"
-homepage: "https://github.com/dakatsuka/camelio"
-bug-reports: "https://github.com/dakatsuka/camelio/issues"
+homepage: "https://github.com/dakatsuka/choku"
+bug-reports: "https://github.com/dakatsuka/choku/issues"
 depends: [
   "ocaml" {>= "5.4"}
   "dune" {>= "3.17"}
@@ -31,4 +31,4 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://github.com/dakatsuka/camelio.git"
+dev-repo: "git+https://github.com/dakatsuka/choku.git"

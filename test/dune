@@ -13,4 +13,4 @@
   test_router
   test_http1
   test_server)
- (libraries camelio alcotest eio eio_main unix))
+ (libraries choku alcotest eio eio_main unix))

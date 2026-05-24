@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Camelio currently bounds request bodies with `max_request_body_size`, rejects
+Choku currently bounds request bodies with `max_request_body_size`, rejects
 unsupported transfer encodings, and closes connections after each response. The
 HTTP/1.1 request-head reader still has two security-relevant gaps:
 
@@ -31,7 +31,7 @@ unbounded header growth or slowloris-style header reads.
 
 ## Non-Goals
 
-- HTTP/1.1 keep-alive idle timeout; Camelio currently closes each connection.
+- HTTP/1.1 keep-alive idle timeout; Choku currently closes each connection.
 - Full request body read timeout.
 - Per-route timeout policy.
 - Header count limits.
@@ -187,12 +187,12 @@ Implementation should run:
 - `dune build @fmt`
 - `dune exec test/test_http1.exe`
 - `dune exec test/test_server.exe`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @all`
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Open Questions
 

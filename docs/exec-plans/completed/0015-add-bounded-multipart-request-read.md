@@ -75,7 +75,7 @@ like `of_request`, then reads the request body with `Body.to_string_limited
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

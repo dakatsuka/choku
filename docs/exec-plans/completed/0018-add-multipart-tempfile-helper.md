@@ -21,7 +21,7 @@ names.
 
 - The user wants to proceed with a tempfile helper after reviewing the design
   tradeoffs.
-- Do not make Camelio choose `/tmp` or any global temporary directory.
+- Do not make Choku choose `/tmp` or any global temporary directory.
 - Do not use client supplied filenames as storage names.
 
 ## Contract First
@@ -90,7 +90,7 @@ remain application-owned and are not automatically cleaned up.
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 
@@ -98,7 +98,7 @@ Added `Multipart.Tempfile` with generated exclusive tempfiles under an
 application-provided Eio directory capability. Tests cover source saving,
 buffered part saving, collision retry, metadata, byte counts, and failed-copy
 cleanup. The streaming upload example now persists file parts to generated
-tempfiles under `_camelio_uploads`.
+tempfiles under `_choku_uploads`.
 
 ## Commit
 

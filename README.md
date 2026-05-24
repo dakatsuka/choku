@@ -1,15 +1,17 @@
-# Camelio
+# Choku
 
-[![CI](https://github.com/dakatsuka/camelio/actions/workflows/ci.yml/badge.svg)](https://github.com/dakatsuka/camelio/actions/workflows/ci.yml)
+[![CI](https://github.com/dakatsuka/choku/actions/workflows/ci.yml/badge.svg)](https://github.com/dakatsuka/choku/actions/workflows/ci.yml)
 
-Camelio is an OCaml 5.4 HTTP server project built around Eio-native direct-style
+Choku is an OCaml 5.4 HTTP server project built around Eio-native direct-style
 IO.
+
+The name "Choku" means "direct" in Japanese.
 
 > A pure Eio HTTP server for OCaml 5.
 
 ## Status
 
-Camelio is in early design and implementation. The first implementation
+Choku is in early design and implementation. The first implementation
 milestone is a minimal HTTP/1.1 server over plain TCP with:
 
 - `Connection: close` behavior;
@@ -23,25 +25,25 @@ milestone is a minimal HTTP/1.1 server over plain TCP with:
 
 ## Usage
 
-Add `camelio`, `eio`, and `eio_main` to your executable libraries:
+Add `choku`, `eio`, and `eio_main` to your executable libraries:
 
 ```lisp
 (executable
  (name app)
- (libraries camelio eio eio_main))
+ (libraries choku eio eio_main))
 ```
 
 Run a minimal server:
 
 ```ocaml
 let handler request =
-  let open Camelio in
+  let open Choku in
   match Request.(meth request, path request) with
-  | Method.GET, "/" -> Response.text "hello from camelio\n"
+  | Method.GET, "/" -> Response.text "hello from choku\n"
   | _ -> Response.text ~status:Status.not_found "not found\n"
 
 let () =
-  let open Camelio in
+  let open Choku in
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
@@ -51,12 +53,12 @@ let () =
 ```
 
 For small handlers, you can also split `Request.path` yourself. Router patterns
-such as `"/users/:id"` are only interpreted by `Camelio.Router`; direct pattern
+such as `"/users/:id"` are only interpreted by `Choku.Router`; direct pattern
 matching sees paths as ordinary strings.
 
 ```ocaml
 let handler request =
-  let open Camelio in
+  let open Choku in
   match Request.(meth request, path request |> String.split_on_char '/') with
   | Method.GET, [ ""; "users"; id ] ->
       Response.text (Printf.sprintf "user %s\n" id)
@@ -70,7 +72,7 @@ Use the router when you want path parameters and first-match routing:
 
 ```ocaml
 let router =
-  let open Camelio in
+  let open Choku in
   Router.empty
   |> Router.get "/" (fun _ _ -> Response.text "hello\n")
   |> Router.get "/users/:id" (fun params _ ->
@@ -79,7 +81,7 @@ let router =
          | Some id -> Response.text (Printf.sprintf "user %s\n" id))
 
 let server =
-  let open Camelio in
+  let open Choku in
   Server.create ~handler:(Router.to_handler router) ()
 ```
 
@@ -88,7 +90,7 @@ bodies while other routes stay buffered:
 
 ```ocaml
 let upload params request =
-  let open Camelio in
+  let open Choku in
   let user_id = Router.Params.get "id" params in
   match Multipart.Streaming.iter_request request ~on_part:save_part with
   | Ok () ->
@@ -100,7 +102,7 @@ let upload params request =
         (Format.asprintf "%a\n" Multipart.pp_error error)
 
 let router =
-  let open Camelio in
+  let open Choku in
   Router.empty
   |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
   |> Router.post
@@ -109,7 +111,7 @@ let router =
        upload
 
 let server =
-  let open Camelio in
+  let open Choku in
   Server.create_router router
 ```
 
@@ -117,7 +119,7 @@ Parse buffered multipart forms for small uploads:
 
 ```ocaml
 let upload_buffered request =
-  let open Camelio in
+  let open Choku in
   match Multipart.of_request request with
   | Error error ->
       Response.text ~status:Status.bad_request
@@ -145,7 +147,7 @@ body:
 
 ```ocaml
 let server =
-  let open Camelio in
+  let open Choku in
   Server.create ~request_body_mode:Server.Streaming
     ~handler:(upload_streaming ~upload_dir ~random) ()
 ```
@@ -155,7 +157,7 @@ upload routes need streaming bodies:
 
 ```ocaml
 let router =
-  let open Camelio in
+  let open Choku in
   Router.empty
   |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
   |> Router.post
@@ -164,13 +166,13 @@ let router =
        upload
 
 let server =
-  let open Camelio in
+  let open Choku in
   Server.create_router router
 ```
 
 ```ocaml
 let upload_streaming ~upload_dir ~random request =
-  let open Camelio in
+  let open Choku in
   match
     Multipart.Streaming.iter_request request
       ~on_part:(fun part source ->
@@ -190,13 +192,13 @@ let upload_streaming ~upload_dir ~random request =
         (Format.asprintf "%a\n" Multipart.pp_error error)
 
 let server =
-  let open Camelio in
+  let open Choku in
   Server.create ~request_body_mode:Server.Streaming
     ~handler:(upload_streaming ~upload_dir ~random) ()
 ```
 
 When using the router, prefer `Server.create_router` and set
-`~request_body_mode:Camelio.Request_body_mode.Streaming` only on upload routes.
+`~request_body_mode:Choku.Request_body_mode.Streaming` only on upload routes.
 Routes without `~request_body_mode` keep the default buffered body behavior.
 Route-level body-mode selection is not available when passing
 `Router.to_handler router` to `Server.create ~handler`.
@@ -204,8 +206,8 @@ Route-level body-mode selection is not available when passing
 The repository includes runnable examples:
 
 ```sh
-dune exec camelio-hello
-dune exec camelio-upload-streaming
+dune exec choku-hello
+dune exec choku-upload-streaming
 ```
 
 ## Development
@@ -218,14 +220,14 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 Network integration tests are disabled by default in local sandboxed
 environments. Run them explicitly when sockets are available:
 
 ```sh
-CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 ```
 
 The project uses:

@@ -1,13 +1,13 @@
 open Alcotest
 
 let test_handler_shape () =
-  let handler : Camelio.Handler.t = fun _ -> Camelio.Response.text "ok" in
+  let handler : Choku.Handler.t = fun _ -> Choku.Response.text "ok" in
   let request =
-    Camelio.Request.make ~meth:Camelio.Method.GET ~target:"/"
-      ~headers:Camelio.Headers.empty ~body:Camelio.Body.empty
+    Choku.Request.make ~meth:Choku.Method.GET ~target:"/"
+      ~headers:Choku.Headers.empty ~body:Choku.Body.empty
   in
   check string "body" "ok"
-    (Camelio.Body.to_string (Camelio.Response.body (handler request)))
+    (Choku.Body.to_string (Choku.Response.body (handler request)))
 
 let () =
   run "handler"

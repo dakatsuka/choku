@@ -18,7 +18,7 @@ plans, product specs, and references. Plans are treated as first-class artifacts
 and repository-local knowledge is preferred because agents cannot reliably use
 context that is only stored in external conversations or people's memory.
 
-## Implications For Camelio
+## Implications For Choku
 
 - Keep `AGENTS.md` short and navigational.
 - Store durable project knowledge under `docs/`.

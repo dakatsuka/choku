@@ -16,12 +16,12 @@ The Eio odoc index showed `eio`, `eio_linux`, `eio_main`, `eio_posix`, and
 The opam package page showed `eio` 1.3 as the latest release on 2026-05-23. This
 means the published GitHub Pages manual may lag behind the latest package
 release. Before relying on version-sensitive behavior, verify the Eio version
-that Camelio intends to build against and inspect the matching source tag or
+that Choku intends to build against and inspect the matching source tag or
 package documentation.
 
 ## Summary
 
-Eio is the core IO and concurrency dependency for Camelio. The official package
+Eio is the core IO and concurrency dependency for Choku. The official package
 documentation is generated with odoc and published at the GitHub Pages URL. The
 published site is backed by the repository's `gh-pages` branch, while the main
 GitHub repository contains tutorials, examples, issues, and implementation
@@ -43,7 +43,7 @@ documentation for the relevant modules. Common starting points include:
 - `Eio.Switch`: resource lifetime and cancellation scope;
 - `Eio.Buf_read` and `Eio.Buf_write`: buffered protocol parsing and writing.
 
-Record any Eio behavior that Camelio depends on in the relevant product spec,
+Record any Eio behavior that Choku depends on in the relevant product spec,
 design doc, or ADR. Do not rely on a bare external link as the only statement of
 required behavior.
 

@@ -1,11 +1,11 @@
 (executable
  (name hello)
- (public_name camelio-hello)
+ (public_name choku-hello)
  (modules hello)
- (libraries camelio eio_main))
+ (libraries choku eio_main))
 
 (executable
  (name upload_streaming)
- (public_name camelio-upload-streaming)
+ (public_name choku-upload-streaming)
  (modules upload_streaming)
- (libraries camelio eio_main))
+ (libraries choku eio_main))

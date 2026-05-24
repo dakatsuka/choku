@@ -7,7 +7,7 @@ Completed
 ## Objective
 
 Design and implement HTTP/1.1 request-line/header-size limits and slowloris
-mitigation for Camelio's Eio server.
+mitigation for Choku's Eio server.
 
 ## Context
 
@@ -63,12 +63,12 @@ mitigation for Camelio's Eio server.
 - `dune build @fmt`
 - `dune exec test/test_http1.exe`
 - `dune exec test/test_server.exe`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @all`
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

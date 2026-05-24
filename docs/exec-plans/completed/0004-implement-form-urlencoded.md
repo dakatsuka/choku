@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Implement `Camelio.Form`, an optional parser for
+Implement `Choku.Form`, an optional parser for
 `application/x-www-form-urlencoded` request bodies that exposes ordered repeated
 fields and structured parse errors.
 
@@ -36,7 +36,7 @@ Create public signatures and block comments for:
 - ordered multimap accessors;
 - error formatter.
 
-Update the public `Camelio` module and dune/test layout after the interface is
+Update the public `Choku` module and dune/test layout after the interface is
 defined.
 
 ## Steps
@@ -52,7 +52,7 @@ defined.
 
 ## Decisions
 
-- Add `Camelio.Form` as a new top-level module.
+- Add `Choku.Form` as a new top-level module.
 - Keep `Form.t` abstract and ordered.
 - Use `decode` for raw payloads and `of_request` for content-type checked
   request parsing.
@@ -68,12 +68,12 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
+opam lint choku.opam
 ```
 
 ## Completion Notes
 
-Implemented `Camelio.Form` with URL-encoded payload decoding, request
+Implemented `Choku.Form` with URL-encoded payload decoding, request
 `Content-Type` checks, ordered repeated fields, structured errors, and error
 formatting. Multipart remains deferred to a separate phased design.
 

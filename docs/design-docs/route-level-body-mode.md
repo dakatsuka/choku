@@ -195,33 +195,33 @@ constructed.
 
 ```ocaml
 let upload params request =
-  let user_id = Camelio.Router.Params.get "id" params in
-  match Camelio.Multipart.Streaming.iter_request request ~on_part:save_part with
-  | Ok () -> Camelio.Response.text "uploaded\n"
+  let user_id = Choku.Router.Params.get "id" params in
+  match Choku.Multipart.Streaming.iter_request request ~on_part:save_part with
+  | Ok () -> Choku.Response.text "uploaded\n"
   | Error error ->
-      Camelio.Response.text ~status:Camelio.Status.bad_request
-        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+      Choku.Response.text ~status:Choku.Status.bad_request
+        (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
 
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.get "/health" (fun _params _request ->
-       Camelio.Response.text "ok\n")
-  |> Camelio.Router.post
-       ~request_body_mode:Camelio.Request_body_mode.Streaming
+  Choku.Router.empty
+  |> Choku.Router.get "/health" (fun _params _request ->
+       Choku.Response.text "ok\n")
+  |> Choku.Router.post
+       ~request_body_mode:Choku.Request_body_mode.Streaming
        "/users/:id/avatar"
        upload
 
-let server = Camelio.Server.create_router router
+let server = Choku.Server.create_router router
 ```
 
 Routes without `~request_body_mode` stay buffered:
 
 ```ocaml
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.post "/login" login_form
-  |> Camelio.Router.post
-       ~request_body_mode:Camelio.Request_body_mode.Streaming
+  Choku.Router.empty
+  |> Choku.Router.post "/login" login_form
+  |> Choku.Router.post
+       ~request_body_mode:Choku.Request_body_mode.Streaming
        "/upload"
        upload
 ```
@@ -230,8 +230,8 @@ Direct handler users keep using server-wide mode:
 
 ```ocaml
 let server =
-  Camelio.Server.create
-    ~request_body_mode:Camelio.Server.Streaming
+  Choku.Server.create
+    ~request_body_mode:Choku.Server.Streaming
     ~handler
     ()
 ```

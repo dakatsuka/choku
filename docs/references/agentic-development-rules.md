@@ -7,7 +7,7 @@
 
 ## Summary
 
-Camelio development should use explicit feedback loops around design,
+Choku development should use explicit feedback loops around design,
 implementation, review, tests, and static analysis.
 
 ## Rules

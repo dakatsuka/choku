@@ -6,7 +6,7 @@ Draft
 
 ## Problem
 
-Camelio's first server milestone exposes a low-level `Handler.t` contract. Users
+Choku's first server milestone exposes a low-level `Handler.t` contract. Users
 can already build small servers with pattern matching, but real applications
 need a small routing layer that maps methods and paths to endpoint handlers
 without making routing mandatory for the server.
@@ -105,18 +105,18 @@ Public `.mli` files must document these contracts with block comments.
 
 ```ocaml
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.get "/health" (fun _params _request ->
-       Camelio.Response.text "ok\n")
-  |> Camelio.Router.get "/users/:id" (fun params _request ->
-       match Camelio.Router.Params.get "id" params with
-       | Some id -> Camelio.Response.text ("user=" ^ id ^ "\n")
-       | None -> Camelio.Response.text ~status:Camelio.Status.bad_request "bad route\n")
+  Choku.Router.empty
+  |> Choku.Router.get "/health" (fun _params _request ->
+       Choku.Response.text "ok\n")
+  |> Choku.Router.get "/users/:id" (fun params _request ->
+       match Choku.Router.Params.get "id" params with
+       | Some id -> Choku.Response.text ("user=" ^ id ^ "\n")
+       | None -> Choku.Response.text ~status:Choku.Status.bad_request "bad route\n")
 
 let server =
-  Camelio.Server.create
+  Choku.Server.create
     ~middlewares:[ add_server_header ]
-    ~handler:(Camelio.Router.to_handler router)
+    ~handler:(Choku.Router.to_handler router)
     ()
 ```
 
@@ -124,13 +124,13 @@ Route-level streaming body mode:
 
 ```ocaml
 let router =
-  Camelio.Router.empty
-  |> Camelio.Router.post
-       ~request_body_mode:Camelio.Request_body_mode.Streaming
+  Choku.Router.empty
+  |> Choku.Router.post
+       ~request_body_mode:Choku.Request_body_mode.Streaming
        "/upload"
        upload
 
-let server = Camelio.Server.create_router router
+let server = Choku.Server.create_router router
 ```
 
 ## Open Questions

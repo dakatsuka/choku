@@ -11,7 +11,7 @@ A pure Eio HTTP server for OCaml 5.
 ## Problem
 
 OCaml 5 provides effects and Eio provides a direct model for structured
-concurrency. Camelio exists to explore and deliver an HTTP server designed around
+concurrency. Choku exists to explore and deliver an HTTP server designed around
 that model instead of adapting an existing HTTP stack or another concurrency
 runtime.
 

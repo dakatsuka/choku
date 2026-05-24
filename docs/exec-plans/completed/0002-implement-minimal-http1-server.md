@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Implement the first buildable Camelio milestone: a minimal Eio-native HTTP/1.1
+Implement the first buildable Choku milestone: a minimal Eio-native HTTP/1.1
 server with shared HTTP value types, handler and middleware contracts, per-module
 unit tests, and a small example server.
 
@@ -70,7 +70,7 @@ implementation is added.
 - Keep source modules in `lib/`.
 - Keep per-module tests in `test/`.
 - Keep a small runnable example in `examples/`.
-- Expose shared HTTP value modules as top-level `Camelio.*` modules.
+- Expose shared HTTP value modules as top-level `Choku.*` modules.
 - Defer Router, Client, TLS, HTTP/2, and HTTP/3 public APIs.
 - Context-free design review passed with no blocking findings after resolving
   stale open questions and policy gaps.
@@ -85,8 +85,8 @@ dune runtest
 dune build @fmt
 dune build @check
 dune build @install
-opam lint camelio.opam
-CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+opam lint choku.opam
+CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 ```
 
 Manual check:

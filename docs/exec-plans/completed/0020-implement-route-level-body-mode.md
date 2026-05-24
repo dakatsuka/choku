@@ -53,12 +53,12 @@ servers.
 - `dune build @fmt`
 - `dune exec test/test_router.exe`
 - `dune exec test/test_server.exe`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @all`
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

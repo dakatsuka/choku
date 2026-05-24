@@ -1,6 +1,6 @@
-# Camelio Agent Guide
+# Choku Agent Guide
 
-Camelio is an OCaml 5.4 HTTP server project built around the slogan:
+Choku is an OCaml 5.4 HTTP server project built around the slogan:
 
 > A pure Eio HTTP server for OCaml 5.
 

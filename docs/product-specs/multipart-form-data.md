@@ -6,14 +6,14 @@ Draft
 
 ## Problem
 
-Camelio should support browser file upload forms without forcing multipart parts
+Choku should support browser file upload forms without forcing multipart parts
 into the URL-encoded `Form` abstraction. The first implementation can parse
 buffered request bodies, but the API should leave room for future Eio streaming
 parts.
 
 ## Goals
 
-- Provide an optional `Camelio.Multipart` module for `multipart/form-data`.
+- Provide an optional `Choku.Multipart` module for `multipart/form-data`.
 - Parse buffered multipart request bodies into ordered parts.
 - Preserve part headers, field names, filenames, content types, and body bytes.
 - Return structured parse errors instead of raising for malformed user input.
@@ -160,18 +160,18 @@ Public `.mli` files must document these contracts with block comments.
 ## Examples
 
 ```ocaml
-match Camelio.Multipart.of_request request with
+match Choku.Multipart.of_request request with
 | Error error ->
-    Camelio.Response.text ~status:Camelio.Status.bad_request
-      (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+    Choku.Response.text ~status:Choku.Status.bad_request
+      (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
 | Ok multipart -> (
-    match Camelio.Multipart.get "avatar" multipart with
-    | None -> Camelio.Response.text ~status:Camelio.Status.bad_request "missing avatar\n"
+    match Choku.Multipart.get "avatar" multipart with
+    | None -> Choku.Response.text ~status:Choku.Status.bad_request "missing avatar\n"
     | Some part ->
-        let filename = Camelio.Multipart.Part.filename part in
-        let bytes = Camelio.Body.to_string (Camelio.Multipart.Part.body part) in
+        let filename = Choku.Multipart.Part.filename part in
+        let bytes = Choku.Body.to_string (Choku.Multipart.Part.body part) in
         (* Phase 1 keeps part bodies buffered. *)
-        Camelio.Response.text
+        Choku.Response.text
           (Printf.sprintf "filename=%s bytes=%d\n"
              (Option.value ~default:"" filename)
              (String.length bytes)))
@@ -181,23 +181,23 @@ Streaming upload example:
 
 ```ocaml
 let handler ~upload_dir ~random request =
-  match Camelio.Multipart.Streaming.iter_request request ~on_part:(fun part source ->
-    match Camelio.Multipart.Streaming.filename part with
+  match Choku.Multipart.Streaming.iter_request request ~on_part:(fun part source ->
+    match Choku.Multipart.Streaming.filename part with
     | None -> Eio.Flow.copy source (Eio.Flow.buffer_sink (Buffer.create 0))
     | Some filename ->
         let saved =
-          Camelio.Multipart.Tempfile.save_source ~dir:upload_dir ~random
+          Choku.Multipart.Tempfile.save_source ~dir:upload_dir ~random
             ~original_filename:filename source
         in
         store_upload_metadata
-          (Camelio.Multipart.Tempfile.display_filename saved)
-          (Camelio.Multipart.Tempfile.path saved)
-          (Camelio.Multipart.Tempfile.size saved))
+          (Choku.Multipart.Tempfile.display_filename saved)
+          (Choku.Multipart.Tempfile.path saved)
+          (Choku.Multipart.Tempfile.size saved))
   with
-  | Ok () -> Camelio.Response.text "uploaded\n"
+  | Ok () -> Choku.Response.text "uploaded\n"
   | Error error ->
-      Camelio.Response.text ~status:Camelio.Status.bad_request
-        (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+      Choku.Response.text ~status:Choku.Status.bad_request
+        (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
 ```
 
 ## Phases

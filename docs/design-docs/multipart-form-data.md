@@ -6,8 +6,8 @@ Draft
 
 ## Context
 
-URL-encoded forms are small key-value bodies that fit Camelio's buffered
-`Body.t`. Multipart form-data can contain files, so Camelio added multipart
+URL-encoded forms are small key-value bodies that fit Choku's buffered
+`Body.t`. Multipart form-data can contain files, so Choku added multipart
 support in phases instead of pretending file uploads are just another string
 multimap.
 
@@ -18,7 +18,7 @@ true streaming iterator for callback-scoped part sources.
 
 ## Goals
 
-- Add `Camelio.Multipart` as a separate optional module.
+- Add `Choku.Multipart` as a separate optional module.
 - Keep URL-encoded forms and multipart parts as separate abstractions.
 - Preserve part headers and body bytes.
 - Expose field lookup by `Content-Disposition` name.
@@ -195,7 +195,7 @@ All public functions and types in `multipart.mli` must have block comments.
 - Return `Form.t`: rejected because multipart parts include headers, filenames,
   content types, and future streaming bodies.
 - Implement streaming first: rejected for the first multipart milestone because
-  Camelio needed the buffered request-body contract, part metadata model, and
+  Choku needed the buffered request-body contract, part metadata model, and
   structured multipart errors before adding live request streaming.
 - Raise exceptions for malformed multipart input: rejected because malformed
   upload bodies are ordinary client input.
@@ -215,7 +215,7 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
 - test request content-type handling, boundary extraction, basic parts,
   repeated fields, filenames, part content types, and malformed bodies;
 - run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
-  @check`, `dune build @install`, and `opam lint camelio.opam`.
+  @check`, `dune build @install`, and `opam lint choku.opam`.
 
 ## Open Questions
 

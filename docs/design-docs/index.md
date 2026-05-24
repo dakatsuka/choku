@@ -1,6 +1,6 @@
 # Design Docs
 
-This directory is the source of truth for Camelio's technical design.
+This directory is the source of truth for Choku's technical design.
 
 ## Current Documents
 

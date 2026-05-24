@@ -16,7 +16,7 @@ future design with phased streaming work.
 
 ## Goals
 
-- Add a small `Camelio.Form` module above existing `Request.t` and `Body.t`.
+- Add a small `Choku.Form` module above existing `Request.t` and `Body.t`.
 - Keep request and body representations unchanged.
 - Make malformed form input explicit with result errors.
 - Preserve enough ordering information for repeated fields.
@@ -41,7 +41,7 @@ future design with phased streaming work.
 `Form.decode body` parses raw URL-encoded bytes. It splits entries on `&`, then
 splits each entry at the first `=`. Missing `=` means an empty value. Both field
 names and values decode `+` to space and `%HH` to the byte represented by two
-hex digits. Other bytes are preserved unchanged; Camelio does not validate or
+hex digits. Other bytes are preserved unchanged; Choku does not validate or
 transcode character encodings in this milestone.
 
 `Form.of_request request` first checks `Content-Type`. It accepts
@@ -110,7 +110,7 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
 - test decoding, repeated fields, empty names and values, malformed percent
   escapes, `Content-Type` handling, and accessors;
 - run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
-  @check`, `dune build @install`, and `opam lint camelio.opam`.
+  @check`, `dune build @install`, and `opam lint choku.opam`.
 
 ## Open Questions
 

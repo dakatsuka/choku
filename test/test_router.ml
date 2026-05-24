@@ -2,187 +2,169 @@ open Alcotest
 
 [@@@alert "-internal"]
 
-let request ?(meth = Camelio.Method.GET) target =
-  Camelio.Request.make ~meth ~target ~headers:Camelio.Headers.empty
-    ~body:Camelio.Body.empty
+let request ?(meth = Choku.Method.GET) target =
+  Choku.Request.make ~meth ~target ~headers:Choku.Headers.empty
+    ~body:Choku.Body.empty
 
-let response_body response =
-  Camelio.Body.to_string (Camelio.Response.body response)
-
-let response_code response =
-  Camelio.Status.code (Camelio.Response.status response)
+let response_body response = Choku.Body.to_string (Choku.Response.body response)
+let response_code response = Choku.Status.code (Choku.Response.status response)
 
 let call router ?meth target =
-  Camelio.Router.to_handler router (request ?meth target)
+  Choku.Router.to_handler router (request ?meth target)
 
-let text body _params _request = Camelio.Response.text body
+let text body _params _request = Choku.Response.text body
 
 let body_mode =
-  testable Camelio.Request_body_mode.pp Camelio.Request_body_mode.equal
+  testable Choku.Request_body_mode.pp Choku.Request_body_mode.equal
 
-let matched_body_mode ?(meth = Camelio.Method.GET) target router =
-  Camelio.Router.Internal.match_route ~meth ~target router
-  |> Option.map (fun (route : Camelio.Router.Internal.matched_route) ->
+let matched_body_mode ?(meth = Choku.Method.GET) target router =
+  Choku.Router.Internal.match_route ~meth ~target router
+  |> Option.map (fun (route : Choku.Router.Internal.matched_route) ->
       route.request_body_mode)
 
 let test_static_route_matches () =
-  let router =
-    Camelio.Router.empty |> Camelio.Router.get "/health" (text "ok")
-  in
+  let router = Choku.Router.empty |> Choku.Router.get "/health" (text "ok") in
   check string "body" "ok" (response_body (call router "/health"))
 
 let test_unused_route_arguments_can_be_underscores () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/health" (fun _ _ -> Camelio.Response.text "ok")
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok")
   in
   check string "body" "ok" (response_body (call router "/health"))
 
 let test_method_must_match () =
-  let router =
-    Camelio.Router.empty |> Camelio.Router.post "/submit" (text "ok")
-  in
+  let router = Choku.Router.empty |> Choku.Router.post "/submit" (text "ok") in
   let response = call router "/submit" in
   check int "status" 404 (response_code response);
   check string "body" "Not Found\n" (response_body response)
 
 let test_first_registered_route_wins () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/users/:id" (fun _params _request ->
-        Camelio.Response.text "param")
-    |> Camelio.Router.get "/users/me" (text "static")
+    Choku.Router.empty
+    |> Choku.Router.get "/users/:id" (fun _params _request ->
+        Choku.Response.text "param")
+    |> Choku.Router.get "/users/me" (text "static")
   in
   check string "body" "param" (response_body (call router "/users/me"))
 
 let test_parameter_capture () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/users/:id/posts/:post-id" (fun params _request ->
+    Choku.Router.empty
+    |> Choku.Router.get "/users/:id/posts/:post-id" (fun params _request ->
         let id =
-          Option.value ~default:"missing"
-            (Camelio.Router.Params.get "id" params)
+          Option.value ~default:"missing" (Choku.Router.Params.get "id" params)
         in
         let post_id =
           Option.value ~default:"missing"
-            (Camelio.Router.Params.get "post-id" params)
+            (Choku.Router.Params.get "post-id" params)
         in
-        Camelio.Response.text (id ^ ":" ^ post_id))
+        Choku.Response.text (id ^ ":" ^ post_id))
   in
   check string "body" "42:abc"
     (response_body (call router "/users/42/posts/abc"))
 
 let test_params_to_list_preserves_pattern_order () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/:first/:second" (fun params _request ->
+    Choku.Router.empty
+    |> Choku.Router.get "/:first/:second" (fun params _request ->
         check
           (list (pair string string))
           "params"
           [ ("first", "one"); ("second", "two") ]
-          (Camelio.Router.Params.to_list params);
-        Camelio.Response.text "ok")
+          (Choku.Router.Params.to_list params);
+        Choku.Response.text "ok")
   in
   check string "body" "ok" (response_body (call router "/one/two"))
 
 let test_query_string_is_ignored () =
-  let router =
-    Camelio.Router.empty |> Camelio.Router.get "/search" (text "ok")
-  in
-  check string "body" "ok" (response_body (call router "/search?q=camelio"))
+  let router = Choku.Router.empty |> Choku.Router.get "/search" (text "ok") in
+  check string "body" "ok" (response_body (call router "/search?q=choku"))
 
 let test_custom_not_found () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.not_found (fun _request ->
-        Camelio.Response.text ~status:Camelio.Status.bad_request "missing")
+    Choku.Router.empty
+    |> Choku.Router.not_found (fun _request ->
+        Choku.Response.text ~status:Choku.Status.bad_request "missing")
   in
   let response = call router "/missing" in
   check int "status" 400 (response_code response);
   check string "body" "missing" (response_body response)
 
 let test_root_route_matches_only_root () =
-  let router = Camelio.Router.empty |> Camelio.Router.get "/" (text "root") in
+  let router = Choku.Router.empty |> Choku.Router.get "/" (text "root") in
   check string "root body" "root" (response_body (call router "/"));
   check int "non-root status" 404 (response_code (call router "/other"))
 
 let test_convenience_methods () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/get" (text "get")
-    |> Camelio.Router.put "/put" (text "put")
-    |> Camelio.Router.patch "/patch" (text "patch")
-    |> Camelio.Router.delete "/delete" (text "delete")
-    |> Camelio.Router.options "/options" (text "options")
+    Choku.Router.empty
+    |> Choku.Router.get "/get" (text "get")
+    |> Choku.Router.put "/put" (text "put")
+    |> Choku.Router.patch "/patch" (text "patch")
+    |> Choku.Router.delete "/delete" (text "delete")
+    |> Choku.Router.options "/options" (text "options")
   in
   check string "get" "get" (response_body (call router "/get"));
   check string "put" "put"
-    (response_body (call router ~meth:Camelio.Method.PUT "/put"));
+    (response_body (call router ~meth:Choku.Method.PUT "/put"));
   check string "patch" "patch"
-    (response_body (call router ~meth:Camelio.Method.PATCH "/patch"));
+    (response_body (call router ~meth:Choku.Method.PATCH "/patch"));
   check string "delete" "delete"
-    (response_body (call router ~meth:Camelio.Method.DELETE "/delete"));
+    (response_body (call router ~meth:Choku.Method.DELETE "/delete"));
   check string "options" "options"
-    (response_body (call router ~meth:Camelio.Method.OPTIONS "/options"))
+    (response_body (call router ~meth:Choku.Method.OPTIONS "/options"))
 
 let test_generic_route_supports_custom_method () =
-  let meth = Camelio.Method.Other "PROPFIND" in
+  let meth = Choku.Method.Other "PROPFIND" in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.route meth "/collection" (text "custom")
+    Choku.Router.empty |> Choku.Router.route meth "/collection" (text "custom")
   in
   check string "body" "custom" (response_body (call router ~meth "/collection"))
 
 let test_route_body_mode_defaults_to_buffered () =
-  let router =
-    Camelio.Router.empty |> Camelio.Router.post "/upload" (text "ok")
-  in
-  check (option body_mode) "body mode" (Some Camelio.Request_body_mode.Buffered)
-    (matched_body_mode ~meth:Camelio.Method.POST "/upload" router)
+  let router = Choku.Router.empty |> Choku.Router.post "/upload" (text "ok") in
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Buffered)
+    (matched_body_mode ~meth:Choku.Method.POST "/upload" router)
 
 let test_route_body_mode_can_be_streaming () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload/:id"
-         (text "ok")
+    Choku.Router.empty
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/upload/:id" (text "ok")
   in
-  check (option body_mode) "body mode"
-    (Some Camelio.Request_body_mode.Streaming)
-    (matched_body_mode ~meth:Camelio.Method.POST "/upload/42?x=1" router)
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
+    (matched_body_mode ~meth:Choku.Method.POST "/upload/42?x=1" router)
 
 let test_route_body_mode_uses_first_matching_route () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get ~request_body_mode:Camelio.Request_body_mode.Streaming
-         "/files/:id" (fun _params _request -> Camelio.Response.text "param")
-    |> Camelio.Router.get "/files/static" (text "static")
+    Choku.Router.empty
+    |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/files/:id" (fun _params _request -> Choku.Response.text "param")
+    |> Choku.Router.get "/files/static" (text "static")
   in
-  check (option body_mode) "body mode"
-    (Some Camelio.Request_body_mode.Streaming)
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
     (matched_body_mode "/files/static" router);
   check string "handler" "param" (response_body (call router "/files/static"))
 
 let test_route_body_mode_requires_method_match () =
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
-         (text "ok")
+    Choku.Router.empty
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/upload" (text "ok")
   in
   check (option body_mode) "body mode" None (matched_body_mode "/upload" router)
 
 let test_internal_match_route_does_not_invoke_handler () =
   let handler_started = ref 0 in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get ~request_body_mode:Camelio.Request_body_mode.Streaming
+    Choku.Router.empty
+    |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
          "/users/:id" (fun _params ->
            incr handler_started;
-           fun _request -> Camelio.Response.text "ok")
+           fun _request -> Choku.Response.text "ok")
   in
-  check (option body_mode) "body mode"
-    (Some Camelio.Request_body_mode.Streaming)
+  check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
     (matched_body_mode "/users/42" router);
   check int "handler not invoked" 0 !handler_started
 
@@ -190,8 +172,8 @@ let check_invalid_pattern pattern =
   check_raises ("invalid " ^ pattern) (Invalid_argument "invalid route pattern")
     (fun () ->
       ignore
-        (Camelio.Router.empty |> Camelio.Router.get pattern (text "unreachable")
-          : Camelio.Router.t))
+        (Choku.Router.empty |> Choku.Router.get pattern (text "unreachable")
+          : Choku.Router.t))
 
 let test_invalid_patterns () =
   List.iter check_invalid_pattern

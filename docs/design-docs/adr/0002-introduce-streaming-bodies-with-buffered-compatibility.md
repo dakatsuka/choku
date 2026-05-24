@@ -10,7 +10,7 @@ Proposed
 
 ## Context
 
-Camelio's current `Body.t` is a replayable buffered string. That keeps the first
+Choku's current `Body.t` is a replayable buffered string. That keeps the first
 server, router, URL-encoded form parser, and buffered multipart parser simple,
 but it requires full request buffering before handlers run. Large file uploads
 need an Eio-native streaming path with backpressure and request-scoped resource
@@ -18,7 +18,7 @@ ownership.
 
 ## Decision
 
-Camelio will evolve `Body.t` toward a representation that supports both
+Choku will evolve `Body.t` toward a representation that supports both
 buffered and streaming bodies. Buffered construction remains available for
 tests, small requests, and responses. Streaming request bodies will be consumed
 through Eio direct-style sources scoped to the handler invocation.
@@ -35,7 +35,7 @@ later consume streaming bodies should prefer a bounded read helper such as
   unbounded or overly conservative memory limits.
 - Add automatic tempfile-backed request bodies: rejected for now because cleanup,
   permissions, and storage policy need a separate design.
-- Introduce callback-based streaming: rejected because Camelio should remain
+- Introduce callback-based streaming: rejected because Choku should remain
   direct-style and Eio-native.
 
 ## Consequences

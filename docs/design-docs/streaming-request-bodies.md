@@ -6,7 +6,7 @@ Draft
 
 ## Context
 
-Camelio currently exposes `Body.t` as a replayable buffered body. This is simple
+Choku currently exposes `Body.t` as a replayable buffered body. This is simple
 and works well for tests, URL-encoded forms, small JSON payloads, and Phase 1
 multipart parsing. It does not fit large uploads because the server must buffer
 the entire request before invoking the handler.
@@ -145,7 +145,7 @@ replace the future streaming multipart parser.
 - Store multipart files automatically in tempfiles: rejected because storage
   policy, cleanup, permissions, and filename handling belong to applications or
   a later helper layer.
-- Add Lwt/Async-style callbacks: rejected by Camelio's Eio-native design.
+- Add Lwt/Async-style callbacks: rejected by Choku's Eio-native design.
 
 ## Validation
 

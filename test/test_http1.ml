@@ -1,13 +1,13 @@
 open Alcotest
 
 let parse_ok raw =
-  match Camelio.Http1.parse_request_string raw with
+  match Choku.Http1.parse_request_string raw with
   | Ok request -> request
   | Error error ->
-      failf "unexpected parse error: %s" (Camelio.Http1.error_to_string error)
+      failf "unexpected parse error: %s" (Choku.Http1.error_to_string error)
 
 let parse_error raw =
-  match Camelio.Http1.parse_request_string raw with
+  match Choku.Http1.parse_request_string raw with
   | Ok _ -> fail "expected parse error"
   | Error error -> error
 
@@ -16,37 +16,37 @@ let test_parse_get () =
     parse_ok "GET /hello?x=1 HTTP/1.1\r\nHost: example.test\r\n\r\n"
   in
   check
-    (module Camelio.Method)
-    "method" Camelio.Method.GET
-    (Camelio.Request.meth request);
-  check string "path" "/hello" (Camelio.Request.path request);
+    (module Choku.Method)
+    "method" Choku.Method.GET
+    (Choku.Request.meth request);
+  check string "path" "/hello" (Choku.Request.path request);
   check (option string) "host" (Some "example.test")
-    (Camelio.Headers.get "host" (Camelio.Request.headers request))
+    (Choku.Headers.get "host" (Choku.Request.headers request))
 
 let test_parse_request_head () =
   let raw =
     "POST /submit HTTP/1.1\r\nHost: example.test\r\nContent-Length: 5"
   in
-  match Camelio.Http1.parse_request_head_string raw with
+  match Choku.Http1.parse_request_head_string raw with
   | Ok head ->
-      check (module Camelio.Method) "method" Camelio.Method.POST head.meth;
+      check (module Choku.Method) "method" Choku.Method.POST head.meth;
       check string "target" "/submit" head.target;
       check (option string) "host" (Some "example.test")
-        (Camelio.Headers.get "host" head.headers);
+        (Choku.Headers.get "host" head.headers);
       check
-        (result int (module Camelio.Http1.Error))
+        (result int (module Choku.Http1.Error))
         "content length" (Ok 5)
-        (Camelio.Http1.content_length head.headers)
-  | Error error -> fail (Camelio.Http1.error_to_string error)
+        (Choku.Http1.content_length head.headers)
+  | Error error -> fail (Choku.Http1.error_to_string error)
 
 let test_parse_request_head_rejects_transfer_encoding () =
   let raw =
     "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked"
   in
   check
-    (result reject (module Camelio.Http1.Error))
-    "transfer-encoding" (Error Camelio.Http1.Unsupported_transfer_encoding)
-    (Camelio.Http1.parse_request_head_string raw)
+    (result reject (module Choku.Http1.Error))
+    "transfer-encoding" (Error Choku.Http1.Unsupported_transfer_encoding)
+    (Choku.Http1.parse_request_head_string raw)
 
 let test_parse_content_length_body () =
   let request =
@@ -58,12 +58,12 @@ let test_parse_content_length_body () =
        hello"
   in
   check string "body" "hello"
-    (Camelio.Body.to_string (Camelio.Request.body request))
+    (Choku.Body.to_string (Choku.Request.body request))
 
 let test_reject_chunked () =
   check
-    (module Camelio.Http1.Error)
-    "error" Camelio.Http1.Unsupported_transfer_encoding
+    (module Choku.Http1.Error)
+    "error" Choku.Http1.Unsupported_transfer_encoding
     (parse_error
        "POST / HTTP/1.1\r\n\
         Host: example.test\r\n\
@@ -81,8 +81,8 @@ let test_reject_invalid_host () =
   List.iter
     (fun raw ->
       check
-        (module Camelio.Http1.Error)
-        "error" Camelio.Http1.Malformed_header (parse_error raw))
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Malformed_header (parse_error raw))
     cases
 
 let test_reject_invalid_content_length () =
@@ -125,8 +125,8 @@ let test_reject_invalid_content_length () =
   List.iter
     (fun raw ->
       check
-        (module Camelio.Http1.Error)
-        "error" Camelio.Http1.Invalid_content_length (parse_error raw))
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Invalid_content_length (parse_error raw))
     cases
 
 let test_allow_identical_content_length () =
@@ -140,7 +140,7 @@ let test_allow_identical_content_length () =
        hello"
   in
   check string "body" "hello"
-    (Camelio.Body.to_string (Camelio.Request.body request))
+    (Choku.Body.to_string (Choku.Request.body request))
 
 let test_reject_transfer_encoding_content_length_smuggling () =
   let cases =
@@ -165,8 +165,8 @@ let test_reject_transfer_encoding_content_length_smuggling () =
   List.iter
     (fun raw ->
       check
-        (module Camelio.Http1.Error)
-        "error" Camelio.Http1.Unsupported_transfer_encoding (parse_error raw))
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Unsupported_transfer_encoding (parse_error raw))
     cases
 
 let test_reject_malformed_header_names () =
@@ -182,8 +182,8 @@ let test_reject_malformed_header_names () =
   List.iter
     (fun raw ->
       check
-        (module Camelio.Http1.Error)
-        "error" Camelio.Http1.Malformed_header (parse_error raw))
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Malformed_header (parse_error raw))
     cases
 
 let test_reject_request_target_controls () =
@@ -198,8 +198,8 @@ let test_reject_request_target_controls () =
   List.iter
     (fun raw ->
       check
-        (module Camelio.Http1.Error)
-        "error" Camelio.Http1.Unsupported_request_target (parse_error raw))
+        (module Choku.Http1.Error)
+        "error" Choku.Http1.Unsupported_request_target (parse_error raw))
     cases
 
 let test_body_is_capped_to_content_length () =
@@ -211,15 +211,14 @@ let test_body_is_capped_to_content_length () =
        \r\n\
        pingGET /evil"
   in
-  check string "body" "ping"
-    (Camelio.Body.to_string (Camelio.Request.body request))
+  check string "body" "ping" (Choku.Body.to_string (Choku.Request.body request))
 
 let test_reject_over_limit_body () =
   check
-    (module Camelio.Http1.Error)
-    "error" Camelio.Http1.Body_too_large
+    (module Choku.Http1.Error)
+    "error" Choku.Http1.Body_too_large
     (match
-       Camelio.Http1.parse_request_string ~max_request_body_size:4
+       Choku.Http1.parse_request_string ~max_request_body_size:4
          "POST / HTTP/1.1\r\n\
           Host: example.test\r\n\
           Content-Length: 5\r\n\
@@ -232,10 +231,10 @@ let test_reject_over_limit_body () =
 let test_response_for_request_head_errors () =
   let cases =
     [
-      ( Camelio.Http1.Request_head_too_large,
+      ( Choku.Http1.Request_head_too_large,
         "HTTP/1.1 431 Request Header Fields Too Large",
         "Request Header Fields Too Large\n" );
-      ( Camelio.Http1.Request_head_timeout,
+      ( Choku.Http1.Request_head_timeout,
         "HTTP/1.1 408 Request Timeout",
         "Request Timeout\n" );
     ]
@@ -243,8 +242,7 @@ let test_response_for_request_head_errors () =
   List.iter
     (fun (error, status_line, body) ->
       let wire =
-        Camelio.Http1.response_for_error error
-        |> Camelio.Http1.serialize_response
+        Choku.Http1.response_for_error error |> Choku.Http1.serialize_response
       in
       check bool "status" true (String.starts_with ~prefix:status_line wire);
       check bool "body" true (String.ends_with ~suffix:body wire))
@@ -252,7 +250,7 @@ let test_response_for_request_head_errors () =
 
 let test_serialize_response () =
   let response =
-    Camelio.Response.text ~status:Camelio.Status.not_found "missing\n"
+    Choku.Response.text ~status:Choku.Status.not_found "missing\n"
   in
   check string "wire"
     "HTTP/1.1 404 Not Found\r\n\
@@ -261,17 +259,17 @@ let test_serialize_response () =
      connection: close\r\n\
      \r\n\
      missing\n"
-    (Camelio.Http1.serialize_response response)
+    (Choku.Http1.serialize_response response)
 
 let test_serialize_response_without_body () =
-  let response = Camelio.Response.text "hello" in
+  let response = Choku.Response.text "hello" in
   check string "wire"
     "HTTP/1.1 200 OK\r\n\
      content-type: text/plain; charset=utf-8\r\n\
      content-length: 5\r\n\
      connection: close\r\n\
      \r\n"
-    (Camelio.Http1.serialize_response ~include_body:false response)
+    (Choku.Http1.serialize_response ~include_body:false response)
 
 let () =
   run "http1"

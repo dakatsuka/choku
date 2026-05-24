@@ -1,81 +1,75 @@
 open Alcotest
 
 let request =
-  Camelio.Request.make ~meth:Camelio.Method.GET ~target:"/"
-    ~headers:Camelio.Headers.empty ~body:Camelio.Body.empty
+  Choku.Request.make ~meth:Choku.Method.GET ~target:"/"
+    ~headers:Choku.Headers.empty ~body:Choku.Body.empty
 
 let test_create_applies_middleware () =
   let middleware next req =
-    next req |> Camelio.Response.with_header "x-middleware" "yes"
+    next req |> Choku.Response.with_header "x-middleware" "yes"
   in
   let server =
-    Camelio.Server.create ~middlewares:[ middleware ]
-      ~handler:(fun _ -> Camelio.Response.text "ok")
+    Choku.Server.create ~middlewares:[ middleware ]
+      ~handler:(fun _ -> Choku.Response.text "ok")
       ()
   in
-  let response = Camelio.Server.handle server request in
+  let response = Choku.Server.handle server request in
   check (option string) "middleware header" (Some "yes")
-    (Camelio.Headers.get "x-middleware" (Camelio.Response.headers response))
+    (Choku.Headers.get "x-middleware" (Choku.Response.headers response))
 
 let test_create_router_applies_middleware () =
   let middleware next req =
-    next req |> Camelio.Response.with_header "x-router-middleware" "yes"
+    next req |> Choku.Response.with_header "x-router-middleware" "yes"
   in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/" (fun _ _ -> Camelio.Response.text "ok")
+    Choku.Router.empty
+    |> Choku.Router.get "/" (fun _ _ -> Choku.Response.text "ok")
   in
-  let server =
-    Camelio.Server.create_router ~middlewares:[ middleware ] router
-  in
-  let response = Camelio.Server.handle server request in
+  let server = Choku.Server.create_router ~middlewares:[ middleware ] router in
+  let response = Choku.Server.handle server request in
   check (option string) "middleware header" (Some "yes")
-    (Camelio.Headers.get "x-router-middleware"
-       (Camelio.Response.headers response))
+    (Choku.Headers.get "x-router-middleware" (Choku.Response.headers response))
 
 let test_create_router_handle_uses_existing_request_body () =
   let request =
-    Camelio.Request.make ~meth:Camelio.Method.POST ~target:"/upload"
-      ~headers:Camelio.Headers.empty
-      ~body:(Camelio.Body.string "ping")
+    Choku.Request.make ~meth:Choku.Method.POST ~target:"/upload"
+      ~headers:Choku.Headers.empty ~body:(Choku.Body.string "ping")
   in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
-         (fun _ req ->
+    Choku.Router.empty
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/upload" (fun _ req ->
            check bool "handle body remains buffered" true
-             (Camelio.Body.is_buffered (Camelio.Request.body req));
+             (Choku.Body.is_buffered (Choku.Request.body req));
            check string "body" "ping"
-             (Camelio.Body.to_string (Camelio.Request.body req));
-           Camelio.Response.text "ok")
+             (Choku.Body.to_string (Choku.Request.body req));
+           Choku.Response.text "ok")
   in
-  let server = Camelio.Server.create_router router in
-  let response = Camelio.Server.handle server request in
-  check int "status" 200
-    (Camelio.Status.code (Camelio.Response.status response))
+  let server = Choku.Server.create_router router in
+  let response = Choku.Server.handle server request in
+  check int "status" 200 (Choku.Status.code (Choku.Response.status response))
 
 let test_default_max_request_body_size () =
   let server =
-    Camelio.Server.create ~handler:(fun _ -> Camelio.Response.text "ok") ()
+    Choku.Server.create ~handler:(fun _ -> Choku.Response.text "ok") ()
   in
-  check int "default" 1_048_576 (Camelio.Server.max_request_body_size server)
+  check int "default" 1_048_576 (Choku.Server.max_request_body_size server)
 
 let test_create_rejects_invalid_request_head_limits () =
   check_raises "invalid max request head size"
     (Invalid_argument "max_request_head_size <= 0") (fun () ->
       ignore
-        (Camelio.Server.create ~max_request_head_size:0
-           ~handler:(fun _ -> Camelio.Response.text "ok")
+        (Choku.Server.create ~max_request_head_size:0
+           ~handler:(fun _ -> Choku.Response.text "ok")
            ()
-          : Camelio.Server.t));
+          : Choku.Server.t));
   check_raises "invalid request head timeout"
     (Invalid_argument "non-positive request_head_timeout") (fun () ->
       ignore
-        (Camelio.Server.create ~request_head_timeout:(Some 0.0)
-           ~handler:(fun _ -> Camelio.Response.text "ok")
+        (Choku.Server.create ~request_head_timeout:(Some 0.0)
+           ~handler:(fun _ -> Choku.Response.text "ok")
            ()
-          : Camelio.Server.t))
+          : Choku.Server.t))
 
 let with_running_server ?mono_clock server f =
   Eio_main.run @@ fun env ->
@@ -96,7 +90,7 @@ let with_running_server ?mono_clock server f =
   (try
      Eio.Switch.run @@ fun sw ->
      Eio.Fiber.fork ~sw (fun () ->
-         Camelio.Server.run ~sw ~net ?mono_clock ~addr server);
+         Choku.Server.run ~sw ~net ?mono_clock ~addr server);
      let rec connect attempts =
        Eio.Switch.run @@ fun client_sw ->
        match Eio.Net.connect ~sw:client_sw net addr with
@@ -112,9 +106,9 @@ let with_running_server ?mono_clock server f =
 
 let with_server ?(max_request_body_size = 4) ?max_request_head_size
     ?request_head_timeout ?mono_clock
-    ?(request_body_mode = Camelio.Server.Buffered) handler f =
+    ?(request_body_mode = Choku.Server.Buffered) handler f =
   let server =
-    Camelio.Server.create ?max_request_head_size ?request_head_timeout
+    Choku.Server.create ?max_request_head_size ?request_head_timeout
       ~max_request_body_size ~request_body_mode ~handler ()
   in
   with_running_server ?mono_clock server f
@@ -122,7 +116,7 @@ let with_server ?(max_request_body_size = 4) ?max_request_head_size
 let with_router_server ?(max_request_body_size = 4) ?max_request_head_size
     ?request_head_timeout ?mono_clock router f =
   let server =
-    Camelio.Server.create_router ?max_request_head_size ?request_head_timeout
+    Choku.Server.create_router ?max_request_head_size ?request_head_timeout
       ~max_request_body_size router
   in
   with_running_server ?mono_clock server f
@@ -135,7 +129,7 @@ let request raw flow =
   Buffer.contents buffer
 
 let require_network () =
-  match Sys.getenv_opt "CAMELIO_RUN_NETWORK_TESTS" with
+  match Sys.getenv_opt "CHOKU_RUN_NETWORK_TESTS" with
   | Some "1" -> ()
   | _ -> skip ()
 
@@ -143,7 +137,7 @@ let test_run_success () =
   require_network ();
   let response =
     with_server
-      (fun _ -> Camelio.Response.text "ok\n")
+      (fun _ -> Choku.Response.text "ok\n")
       (request "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response);
@@ -153,7 +147,7 @@ let test_run_head_suppresses_response_body () =
   require_network ();
   let response =
     with_server
-      (fun _ -> Camelio.Response.text "hello")
+      (fun _ -> Choku.Response.text "hello")
       (request "HEAD / HTTP/1.1\r\nHost: example.test\r\n\r\n")
   in
   check string "wire"
@@ -181,19 +175,19 @@ let test_run_post_request () =
     with_server
       (fun req ->
         check
-          (module Camelio.Method)
-          "method" Camelio.Method.POST (Camelio.Request.meth req);
-        check string "target" "/upload?x=1" (Camelio.Request.target req);
-        check string "path" "/upload" (Camelio.Request.path req);
+          (module Choku.Method)
+          "method" Choku.Method.POST (Choku.Request.meth req);
+        check string "target" "/upload?x=1" (Choku.Request.target req);
+        check string "path" "/upload" (Choku.Request.path req);
         check (option string) "content-type" (Some "text/plain")
-          (Camelio.Headers.get "content-type" (Camelio.Request.headers req));
+          (Choku.Headers.get "content-type" (Choku.Request.headers req));
         check (option string) "content-length" (Some "4")
-          (Camelio.Headers.get "content-length" (Camelio.Request.headers req));
+          (Choku.Headers.get "content-length" (Choku.Request.headers req));
         check bool "buffered" true
-          (Camelio.Body.is_buffered (Camelio.Request.body req));
+          (Choku.Body.is_buffered (Choku.Request.body req));
         check string "body" "ping"
-          (Camelio.Body.to_string (Camelio.Request.body req));
-        Camelio.Response.text "ok\n")
+          (Choku.Body.to_string (Choku.Request.body req));
+        Choku.Response.text "ok\n")
       (request raw)
   in
   check bool
@@ -219,26 +213,26 @@ let test_run_streaming_post_request () =
   in
   let response =
     with_server ~max_request_body_size:5_000
-      ~request_body_mode:Camelio.Server.Streaming
+      ~request_body_mode:Choku.Server.Streaming
       (fun req ->
-        let request_body = Camelio.Request.body req in
-        check bool "streaming" false (Camelio.Body.is_buffered request_body);
+        let request_body = Choku.Request.body req in
+        check bool "streaming" false (Choku.Body.is_buffered request_body);
         check (option string) "content-length" (Some "5000")
-          (Camelio.Headers.get "content-length" (Camelio.Request.headers req));
+          (Choku.Headers.get "content-length" (Choku.Request.headers req));
         check_raises "streaming to_string"
           (Invalid_argument "streaming body cannot be read with Body.to_string")
-          (fun () -> ignore (Camelio.Body.to_string request_body : string));
+          (fun () -> ignore (Choku.Body.to_string request_body : string));
         check
-          (result string (of_pp Camelio.Body.pp_error))
+          (result string (of_pp Choku.Body.pp_error))
           "body" (Ok body)
-          (Camelio.Body.to_string_limited ~max_size:5_000 request_body);
+          (Choku.Body.to_string_limited ~max_size:5_000 request_body);
         check_raises "single consumption"
           (Invalid_argument "streaming body has already been consumed")
           (fun () ->
             ignore
-              (Camelio.Body.to_string_limited ~max_size:5_000 request_body
-                : (string, Camelio.Body.error) result));
-        Camelio.Response.text "ok\n")
+              (Choku.Body.to_string_limited ~max_size:5_000 request_body
+                : (string, Choku.Body.error) result));
+        Choku.Response.text "ok\n")
       (request raw)
   in
   check bool
@@ -249,8 +243,8 @@ let test_run_streaming_post_request () =
 let test_run_streaming_unconsumed_body () =
   require_network ();
   let response =
-    with_server ~request_body_mode:Camelio.Server.Streaming
-      (fun _req -> Camelio.Response.text "ok\n")
+    with_server ~request_body_mode:Choku.Server.Streaming
+      (fun _req -> Choku.Response.text "ok\n")
       (request
          "POST / HTTP/1.1\r\n\
           Host: example.test\r\n\
@@ -264,14 +258,14 @@ let test_run_streaming_short_body_source_error () =
   require_network ();
   let response =
     with_server ~max_request_body_size:5
-      ~request_body_mode:Camelio.Server.Streaming
+      ~request_body_mode:Choku.Server.Streaming
       (fun req ->
         match
-          Camelio.Body.with_source (Camelio.Request.body req) Eio.Flow.read_all
+          Choku.Body.with_source (Choku.Request.body req) Eio.Flow.read_all
         with
-        | _ -> Camelio.Response.text "unexpected\n"
-        | exception Camelio.Body.Unexpected_end_of_body_read ->
-            Camelio.Response.text ~status:Camelio.Status.bad_request "short\n")
+        | _ -> Choku.Response.text "unexpected\n"
+        | exception Choku.Body.Unexpected_end_of_body_read ->
+            Choku.Response.text ~status:Choku.Status.bad_request "short\n")
       (request
          "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 5\r\n\r\nhi")
   in
@@ -307,7 +301,7 @@ let test_run_missing_host_bad_request () =
     with_server
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request "GET / HTTP/1.1\r\n\r\n")
   in
   check bool "400" true
@@ -321,7 +315,7 @@ let test_run_duplicate_host_bad_request () =
     with_server
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request
          "GET / HTTP/1.1\r\nHost: example.test\r\nHost: other.test\r\n\r\n")
   in
@@ -336,7 +330,7 @@ let test_run_rejects_fragment_target_before_body_limit () =
     with_server
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request
          "POST /bad#fragment HTTP/1.1\r\n\
           Host: example.test\r\n\
@@ -387,7 +381,7 @@ let test_run_payload_too_large () =
 let test_run_streaming_payload_too_large () =
   require_network ();
   let response =
-    with_server ~request_body_mode:Camelio.Server.Streaming
+    with_server ~request_body_mode:Choku.Server.Streaming
       (fun _ -> fail "handler should not run")
       (request
          "POST / HTTP/1.1\r\n\
@@ -415,7 +409,7 @@ let test_run_streaming_unsupported_transfer_encoding () =
       ]
   in
   let response =
-    with_server ~request_body_mode:Camelio.Server.Streaming
+    with_server ~request_body_mode:Choku.Server.Streaming
       (fun _ -> fail "handler should not run")
       (request raw)
   in
@@ -443,7 +437,7 @@ let test_run_rejects_transfer_encoding_content_length_smuggling () =
     with_server
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request raw)
   in
   check bool "400" true
@@ -457,7 +451,7 @@ let test_run_rejects_malformed_folded_header () =
     with_server
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request "GET / HTTP/1.1\r\nHost: example.test\r\n folded: yes\r\n\r\n")
   in
   check bool "400" true
@@ -471,7 +465,7 @@ let test_run_rejects_large_request_head () =
     with_server ~max_request_head_size:32
       (fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       (request
          "GET / HTTP/1.1\r\n\
           Host: example.test\r\n\
@@ -488,7 +482,7 @@ let test_run_large_request_head_at_limit () =
   let raw = "GET / HTTP/1.1\r\nHost: example.test\r\nX-Test: ok\r\n\r\n" in
   let response =
     with_server ~max_request_head_size:(String.length raw)
-      (fun _ -> Camelio.Response.text "ok\n")
+      (fun _ -> Choku.Response.text "ok\n")
       (request raw)
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
@@ -502,8 +496,8 @@ let test_run_request_head_limit_ignores_buffered_body_prefix () =
     with_server ~max_request_head_size:(String.length head)
       (fun req ->
         check string "body" "ping"
-          (Camelio.Body.to_string (Camelio.Request.body req));
-        Camelio.Response.text "ok\n")
+          (Choku.Body.to_string (Choku.Request.body req));
+        Choku.Response.text "ok\n")
       (request (head ^ "ping"))
   in
   check bool "200" true (String.starts_with ~prefix:"HTTP/1.1 200 OK" response)
@@ -527,17 +521,17 @@ let test_run_rejects_request_head_timeout () =
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let handler_ran = ref false in
   let server =
-    Camelio.Server.create ~request_head_timeout:(Some 0.02)
+    Choku.Server.create ~request_head_timeout:(Some 0.02)
       ~handler:(fun _ ->
         handler_ran := true;
-        Camelio.Response.text "unexpected\n")
+        Choku.Response.text "unexpected\n")
       ()
   in
   let response = ref None in
   (try
      Eio.Switch.run @@ fun sw ->
      Eio.Fiber.fork ~sw (fun () ->
-         Camelio.Server.run ~sw ~net ~mono_clock ~addr server);
+         Choku.Server.run ~sw ~net ~mono_clock ~addr server);
      let rec connect attempts =
        Eio.Switch.run @@ fun client_sw ->
        match Eio.Net.connect ~sw:client_sw net addr with
@@ -582,19 +576,19 @@ let test_run_request_head_timeout_does_not_cover_body () =
   in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   let server =
-    Camelio.Server.create ~max_request_body_size:4
+    Choku.Server.create ~max_request_body_size:4
       ~request_head_timeout:(Some 0.02)
       ~handler:(fun req ->
         check string "body" "ping"
-          (Camelio.Body.to_string (Camelio.Request.body req));
-        Camelio.Response.text "ok\n")
+          (Choku.Body.to_string (Choku.Request.body req));
+        Choku.Response.text "ok\n")
       ()
   in
   let response = ref None in
   (try
      Eio.Switch.run @@ fun sw ->
      Eio.Fiber.fork ~sw (fun () ->
-         Camelio.Server.run ~sw ~net ~mono_clock ~addr server);
+         Choku.Server.run ~sw ~net ~mono_clock ~addr server);
      let rec connect attempts =
        Eio.Switch.run @@ fun client_sw ->
        match Eio.Net.connect ~sw:client_sw net addr with
@@ -629,8 +623,8 @@ let test_run_request_head_timeout_does_not_cover_body () =
 let test_run_requires_mono_clock_for_request_head_timeout () =
   require_network ();
   let server =
-    Camelio.Server.create ~request_head_timeout:(Some 1.0)
-      ~handler:(fun _ -> Camelio.Response.text "ok\n")
+    Choku.Server.create ~request_head_timeout:(Some 1.0)
+      ~handler:(fun _ -> Choku.Response.text "ok\n")
       ()
   in
   Eio_main.run @@ fun env ->
@@ -639,20 +633,20 @@ let test_run_requires_mono_clock_for_request_head_timeout () =
   check_raises "missing mono_clock"
     (Invalid_argument "request_head_timeout requires Server.run ~mono_clock")
     (fun () ->
-      Camelio.Server.run ~sw ~net
+      Choku.Server.run ~sw ~net
         ~addr:(`Tcp (Eio.Net.Ipaddr.V4.loopback, 0))
         server)
 
 let test_run_streaming_body_is_capped_to_content_length () =
   require_network ();
   let response =
-    with_server ~request_body_mode:Camelio.Server.Streaming
+    with_server ~request_body_mode:Choku.Server.Streaming
       (fun req ->
         check
-          (result string (of_pp Camelio.Body.pp_error))
+          (result string (of_pp Choku.Body.pp_error))
           "body" (Ok "ping")
-          (Camelio.Body.to_string_limited ~max_size:4 (Camelio.Request.body req));
-        Camelio.Response.text "ok\n")
+          (Choku.Body.to_string_limited ~max_size:4 (Choku.Request.body req));
+        Choku.Response.text "ok\n")
       (request
          "POST / HTTP/1.1\r\n\
           Host: example.test\r\n\
@@ -665,12 +659,12 @@ let test_run_streaming_body_is_capped_to_content_length () =
 let test_run_router_buffered_route () =
   require_network ();
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post "/buffered" (fun _ req ->
-        let body = Camelio.Request.body req in
-        check bool "buffered" true (Camelio.Body.is_buffered body);
-        check string "body" "ping" (Camelio.Body.to_string body);
-        Camelio.Response.text "buffered\n")
+    Choku.Router.empty
+    |> Choku.Router.post "/buffered" (fun _ req ->
+        let body = Choku.Request.body req in
+        check bool "buffered" true (Choku.Body.is_buffered body);
+        check string "body" "ping" (Choku.Body.to_string body);
+        Choku.Response.text "buffered\n")
   in
   let response =
     with_router_server router
@@ -691,17 +685,16 @@ let test_run_router_streaming_route () =
   require_network ();
   let body = String.make 5_000 'x' in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/streaming"
-         (fun _ req ->
-           let request_body = Camelio.Request.body req in
-           check bool "streaming" false (Camelio.Body.is_buffered request_body);
+    Choku.Router.empty
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/streaming" (fun _ req ->
+           let request_body = Choku.Request.body req in
+           check bool "streaming" false (Choku.Body.is_buffered request_body);
            check
-             (result string (of_pp Camelio.Body.pp_error))
+             (result string (of_pp Choku.Body.pp_error))
              "body" (Ok body)
-             (Camelio.Body.to_string_limited ~max_size:5_000 request_body);
-           Camelio.Response.text "streaming\n")
+             (Choku.Body.to_string_limited ~max_size:5_000 request_body);
+           Choku.Response.text "streaming\n")
   in
   let raw =
     String.concat ""
@@ -728,10 +721,10 @@ let test_run_router_unmatched_body_too_large () =
   require_network ();
   let not_found_ran = ref false in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.not_found (fun _ ->
+    Choku.Router.empty
+    |> Choku.Router.not_found (fun _ ->
         not_found_ran := true;
-        Camelio.Response.text ~status:Camelio.Status.not_found "missing\n")
+        Choku.Response.text ~status:Choku.Status.not_found "missing\n")
   in
   let response =
     with_router_server router
@@ -750,18 +743,17 @@ let test_run_router_does_not_preinvoke_route_handler () =
   require_network ();
   let handler_started = ref 0 in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
-         (fun _params ->
+    Choku.Router.empty
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/upload" (fun _params ->
            incr handler_started;
            fun req ->
              check
-               (result string (of_pp Camelio.Body.pp_error))
+               (result string (of_pp Choku.Body.pp_error))
                "body" (Ok "ping")
-               (Camelio.Body.to_string_limited ~max_size:4
-                  (Camelio.Request.body req));
-             Camelio.Response.text "ok\n")
+               (Choku.Body.to_string_limited ~max_size:4
+                  (Choku.Request.body req));
+             Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -813,20 +805,20 @@ let test_run_streaming_multipart_upload () =
   in
   let response =
     with_server ~max_request_body_size:(String.length body)
-      ~request_body_mode:Camelio.Server.Streaming
+      ~request_body_mode:Choku.Server.Streaming
       (fun req ->
         check bool "request body is streaming" false
-          (Camelio.Body.is_buffered (Camelio.Request.body req));
+          (Choku.Body.is_buffered (Choku.Request.body req));
         let title = ref None in
         let file_bytes = ref None in
         match
-          Camelio.Multipart.Streaming.iter_request req
+          Choku.Multipart.Streaming.iter_request req
             ~on_part:(fun part source ->
-              match Camelio.Multipart.Streaming.name part with
+              match Choku.Multipart.Streaming.name part with
               | Some "title" -> title := Some (Eio.Flow.read_all source)
               | Some "file" ->
                   check (option string) "filename" (Some "avatar.bin")
-                    (Camelio.Multipart.Streaming.filename part);
+                    (Choku.Multipart.Streaming.filename part);
                   let scratch = Cstruct.create 257 in
                   let rec count total =
                     match Eio.Flow.single_read source scratch with
@@ -838,14 +830,14 @@ let test_run_streaming_multipart_upload () =
                   Eio.Flow.copy source (Eio.Flow.buffer_sink (Buffer.create 0)))
         with
         | Error error ->
-            Camelio.Response.text ~status:Camelio.Status.bad_request
-              (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+            Choku.Response.text ~status:Choku.Status.bad_request
+              (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
         | Ok () ->
             check (option string) "title" (Some "avatar") !title;
             check (option int) "file bytes"
               (Some (String.length file_body))
               !file_bytes;
-            Camelio.Response.text "uploaded\n")
+            Choku.Response.text "uploaded\n")
       (request (multipart_request ~boundary body))
   in
   check bool
@@ -866,17 +858,17 @@ let test_run_streaming_multipart_malformed_body () =
   in
   let response =
     with_server ~max_request_body_size:(String.length body)
-      ~request_body_mode:Camelio.Server.Streaming
+      ~request_body_mode:Choku.Server.Streaming
       (fun req ->
         handler_ran := true;
         match
-          Camelio.Multipart.Streaming.iter_request req ~on_part:(fun _ source ->
+          Choku.Multipart.Streaming.iter_request req ~on_part:(fun _ source ->
               ignore (Eio.Flow.read_all source : string))
         with
-        | Ok () -> Camelio.Response.text "unexpected\n"
+        | Ok () -> Choku.Response.text "unexpected\n"
         | Error error ->
-            Camelio.Response.text ~status:Camelio.Status.bad_request
-              (Format.asprintf "%a\n" Camelio.Multipart.pp_error error))
+            Choku.Response.text ~status:Choku.Status.bad_request
+              (Format.asprintf "%a\n" Choku.Multipart.pp_error error))
       (request (multipart_request ~boundary body))
   in
   check bool
@@ -903,21 +895,20 @@ let test_run_router_streaming_multipart_upload () =
       ]
   in
   let router =
-    Camelio.Router.empty
-    |> Camelio.Router.get "/health" (fun _ req ->
+    Choku.Router.empty
+    |> Choku.Router.get "/health" (fun _ req ->
         check bool "health body is buffered" true
-          (Camelio.Body.is_buffered (Camelio.Request.body req));
-        Camelio.Response.text "ok\n")
-    |> Camelio.Router.post
-         ~request_body_mode:Camelio.Request_body_mode.Streaming "/upload"
-         (fun _ req ->
+          (Choku.Body.is_buffered (Choku.Request.body req));
+        Choku.Response.text "ok\n")
+    |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
+         "/upload" (fun _ req ->
            check bool "request body is streaming" false
-             (Camelio.Body.is_buffered (Camelio.Request.body req));
+             (Choku.Body.is_buffered (Choku.Request.body req));
            let file_bytes = ref None in
            match
-             Camelio.Multipart.Streaming.iter_request req
+             Choku.Multipart.Streaming.iter_request req
                ~on_part:(fun part source ->
-                 match Camelio.Multipart.Streaming.filename part with
+                 match Choku.Multipart.Streaming.filename part with
                  | Some "router.bin" ->
                      file_bytes :=
                        Some (String.length (Eio.Flow.read_all source))
@@ -926,13 +917,13 @@ let test_run_router_streaming_multipart_upload () =
                        (Eio.Flow.buffer_sink (Buffer.create 0)))
            with
            | Error error ->
-               Camelio.Response.text ~status:Camelio.Status.bad_request
-                 (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+               Choku.Response.text ~status:Choku.Status.bad_request
+                 (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
            | Ok () ->
                check (option int) "file bytes"
                  (Some (String.length file_body))
                  !file_bytes;
-               Camelio.Response.text "uploaded\n")
+               Choku.Response.text "uploaded\n")
   in
   let health =
     with_router_server ~max_request_body_size:(String.length body) router

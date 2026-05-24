@@ -1,5 +1,5 @@
 (library
- (name camelio)
- (public_name camelio)
+ (name choku)
+ (public_name choku)
  (private_modules http1_wire request_target)
  (libraries eio))

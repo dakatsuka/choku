@@ -61,7 +61,7 @@ val run :
   unit
 (** [run ~sw ~net ~addr server] accepts HTTP connections on [addr] using Eio.
 
-    The caller owns [sw]. Camelio attaches listener resources and connection
+    The caller owns [sw]. Choku attaches listener resources and connection
     fibers to that switch, but does not close it. The call runs until [sw] is
     cancelled or the listening socket fails.
 

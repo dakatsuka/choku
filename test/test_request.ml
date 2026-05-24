@@ -1,18 +1,18 @@
 open Alcotest
 
 let request target =
-  Camelio.Request.make ~meth:Camelio.Method.GET ~target
-    ~headers:Camelio.Headers.empty ~body:Camelio.Body.empty
+  Choku.Request.make ~meth:Choku.Method.GET ~target ~headers:Choku.Headers.empty
+    ~body:Choku.Body.empty
 
 let test_path_strips_query () =
-  check string "path" "/items" (Camelio.Request.path (request "/items?a=1"))
+  check string "path" "/items" (Choku.Request.path (request "/items?a=1"))
 
 let test_root_path () =
-  check string "path" "/" (Camelio.Request.path (request "/"))
+  check string "path" "/" (Choku.Request.path (request "/"))
 
 let test_path_can_be_split_for_direct_matching () =
   match
-    Camelio.Request.path (request "/users/42?tab=profile")
+    Choku.Request.path (request "/users/42?tab=profile")
     |> String.split_on_char '/'
   with
   | [ ""; "users"; id ] -> check string "id" "42" id
@@ -23,23 +23,23 @@ let test_path_can_be_split_for_direct_matching () =
 
 let test_invalid_target () =
   check_raises "invalid target" (Invalid_argument "invalid origin-form target")
-    (fun () -> ignore (request "https://example.test/" : Camelio.Request.t))
+    (fun () -> ignore (request "https://example.test/" : Choku.Request.t))
 
 let test_reject_space_in_target () =
   check_raises "space in target" (Invalid_argument "invalid origin-form target")
-    (fun () -> ignore (request "/bad path" : Camelio.Request.t))
+    (fun () -> ignore (request "/bad path" : Choku.Request.t))
 
 let test_reject_fragment_in_target () =
   check_raises "fragment in target"
     (Invalid_argument "invalid origin-form target") (fun () ->
-      ignore (request "/bad#fragment" : Camelio.Request.t))
+      ignore (request "/bad#fragment" : Choku.Request.t))
 
 let test_reject_control_targets () =
   List.iter
     (fun target ->
       check_raises ("invalid " ^ target)
         (Invalid_argument "invalid origin-form target") (fun () ->
-          ignore (request target : Camelio.Request.t)))
+          ignore (request target : Choku.Request.t)))
     [ "/bad\tpath"; "/bad\rpath"; "/bad\npath"; "" ]
 
 let () =

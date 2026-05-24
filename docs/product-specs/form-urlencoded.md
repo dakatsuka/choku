@@ -6,13 +6,13 @@ Draft
 
 ## Problem
 
-Camelio can already expose buffered request bodies, but handlers need a small
+Choku can already expose buffered request bodies, but handlers need a small
 and predictable way to read `application/x-www-form-urlencoded` form submissions
 without committing multipart upload behavior to the same API.
 
 ## Goals
 
-- Provide an optional `Camelio.Form` module for URL-encoded form bodies.
+- Provide an optional `Choku.Form` module for URL-encoded form bodies.
 - Preserve repeated field order.
 - Decode `+` as space and percent-encoded bytes.
 - Return structured parse errors instead of raising for malformed user input.
@@ -70,14 +70,14 @@ Public `.mli` files must document these contracts with block comments.
 ## Examples
 
 ```ocaml
-match Camelio.Form.of_request request with
+match Choku.Form.of_request request with
 | Ok form -> (
-    match Camelio.Form.get "email" form with
-    | Some email -> Camelio.Response.text ("email=" ^ email ^ "\n")
-    | None -> Camelio.Response.text ~status:Camelio.Status.bad_request "missing email\n")
+    match Choku.Form.get "email" form with
+    | Some email -> Choku.Response.text ("email=" ^ email ^ "\n")
+    | None -> Choku.Response.text ~status:Choku.Status.bad_request "missing email\n")
 | Error error ->
-    Camelio.Response.text ~status:Camelio.Status.bad_request
-      (Format.asprintf "%a\n" Camelio.Form.pp_error error)
+    Choku.Response.text ~status:Choku.Status.bad_request
+      (Format.asprintf "%a\n" Choku.Form.pp_error error)
 ```
 
 ## Open Questions

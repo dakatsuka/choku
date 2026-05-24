@@ -6,7 +6,7 @@ Completed
 
 ## Objective
 
-Close correctness and security gaps in Camelio's current HTTP/1.1 server by
+Close correctness and security gaps in Choku's current HTTP/1.1 server by
 validating required `Host` headers, centralizing origin-form request-target
 validation, preserving documented protocol error precedence, and suppressing
 response body bytes for explicit `HEAD` requests.
@@ -68,12 +68,12 @@ response body bytes for explicit `HEAD` requests.
 - `dune exec test/test_http1.exe`
 - `dune exec test/test_request.exe`
 - `dune exec test/test_server.exe`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @all`
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

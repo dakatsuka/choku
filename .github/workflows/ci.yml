@@ -42,7 +42,7 @@ jobs:
         run: opam exec -- dune runtest
 
       - name: Loopback integration tests
-        run: opam exec -- env CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
+        run: opam exec -- env CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe
 
       - name: Format check
         run: opam exec -- dune build @fmt
@@ -54,4 +54,4 @@ jobs:
         run: opam exec -- dune build @install
 
       - name: opam lint
-        run: opam lint camelio.opam
+        run: opam lint choku.opam

@@ -33,7 +33,7 @@ storage policy remains application code or an additional crate.
 
 ## Implications
 
-Camelio should continue to keep its core HTTP server focused on request parsing,
+Choku should continue to keep its core HTTP server focused on request parsing,
 body delivery, limits, and routing policy. The current `Multipart.Streaming`,
 `Multipart.Filename.sanitize`, and `Multipart.Tempfile.save_*` helpers fit the
 lightweight-server pattern.

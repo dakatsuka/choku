@@ -1,8 +1,8 @@
 open Alcotest
 
 let request =
-  Camelio.Request.make ~meth:Camelio.Method.GET ~target:"/"
-    ~headers:Camelio.Headers.empty ~body:Camelio.Body.empty
+  Choku.Request.make ~meth:Choku.Method.GET ~target:"/"
+    ~headers:Choku.Headers.empty ~body:Choku.Body.empty
 
 let test_apply_order () =
   let events = ref [] in
@@ -12,9 +12,9 @@ let test_apply_order () =
     events := !events @ [ name ^ ":response" ];
     response
   in
-  let handler _ = Camelio.Response.text "ok" in
-  let wrapped = Camelio.Middleware.apply [ record "a"; record "b" ] handler in
-  ignore (wrapped request : Camelio.Response.t);
+  let handler _ = Choku.Response.text "ok" in
+  let wrapped = Choku.Middleware.apply [ record "a"; record "b" ] handler in
+  ignore (wrapped request : Choku.Response.t);
   check (list string) "order"
     [ "a:request"; "b:request"; "b:response"; "a:response" ]
     !events

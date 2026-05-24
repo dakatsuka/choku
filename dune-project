@@ -1,23 +1,23 @@
 (lang dune 3.17)
 
-(name camelio)
+(name choku)
 
 (generate_opam_files true)
 
 (source
- (github dakatsuka/camelio))
+ (github dakatsuka/choku))
 
-(authors "Camelio contributors")
+(authors "Choku contributors")
 
-(maintainers "Camelio contributors")
+(maintainers "Choku contributors")
 
 (license ISC)
 
 (package
- (name camelio)
+ (name choku)
  (synopsis "A pure Eio HTTP server for OCaml 5")
  (description
-  "Camelio is an OCaml 5 HTTP server project designed around Eio-native direct-style IO.")
+  "Choku is an OCaml 5 HTTP server project designed around Eio-native direct-style IO.")
  (depends
   (ocaml
    (>= 5.4))

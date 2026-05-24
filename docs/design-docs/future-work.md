@@ -30,7 +30,7 @@ because it has structured router metadata. A future API could expose a generic
 pre-body selector for users who do not want `Router.t` but still need to choose
 buffered or streaming bodies from request-head metadata.
 
-This requires deciding what stable request-head type Camelio should expose
+This requires deciding what stable request-head type Choku should expose
 publicly.
 
 ### Router Follow-Up Features

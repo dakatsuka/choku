@@ -65,15 +65,15 @@ contracts:
 - `dune build @fmt`
 - `dune build @all`
 - `dune runtest`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 
 Added server-level streaming multipart integration tests and a
-`camelio-upload-streaming` example. The successful network test exercises an
+`choku-upload-streaming` example. The successful network test exercises an
 actual HTTP multipart upload through `Server.create ~request_body_mode:Streaming`
 and `Multipart.Streaming.iter_request`. The malformed multipart integration test
 shows the handler mapping multipart parser errors to `400 Bad Request`.

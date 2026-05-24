@@ -20,7 +20,7 @@ HTTP parser, request body, routing, header, and multipart implementations.
 ## Clarifications
 
 - The tests should target vulnerability classes, not product-specific CVEs.
-- The expected behavior should match Camelio's current HTTP/1.1 scope:
+- The expected behavior should match Choku's current HTTP/1.1 scope:
   connection-close responses, no chunked request support, origin-form request
   targets only, bounded request bodies, and explicit streaming opt-in.
 
@@ -51,10 +51,10 @@ contracts:
 
 ## Decisions
 
-- Keep this pass test-only because the added cases confirmed existing Camelio
+- Keep this pass test-only because the added cases confirmed existing Choku
   behavior already rejects or safely bounds the tested inputs.
 - Treat any `Transfer-Encoding` request as unsupported, including
-  `Transfer-Encoding` plus `Content-Length`, because Camelio does not implement
+  `Transfer-Encoding` plus `Content-Length`, because Choku does not implement
   chunked request bodies.
 - Preserve connection-close semantics and verify declared `Content-Length`
   bounds the exposed body bytes.
@@ -67,12 +67,12 @@ contracts:
 - `dune exec test/test_response.exe`
 - `dune exec test/test_multipart.exe`
 - `dune exec test/test_server.exe`
-- `CAMELIO_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
+- `CHOKU_RUN_NETWORK_TESTS=1 dune exec test/test_server.exe`
 - `dune build @all`
 - `dune runtest`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

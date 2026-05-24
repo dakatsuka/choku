@@ -82,7 +82,7 @@ Public contract behavior preserved in this plan:
 - `dune build @all`
 - `dune build @check`
 - `dune build @install`
-- `opam lint camelio.opam`
+- `opam lint choku.opam`
 
 ## Completion Notes
 

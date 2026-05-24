@@ -6,7 +6,9 @@ Accepted
 
 ## Principles
 
-- Camelio is a pure Eio HTTP server for OCaml 5.
+- Choku is a pure Eio HTTP server for OCaml 5.
+- The name "Choku" means "direct" in Japanese, reflecting the project's
+  direct-style Eio programming model.
 - The project optimizes for clear, inspectable OCaml rather than broad framework
   compatibility.
 - Effects-based structured concurrency is a central design feature, not an
@@ -22,7 +24,7 @@ Accepted
 
 ## Dependency Policy
 
-Camelio must not depend on `cohttp`, `lwt`, or `async`.
+Choku must not depend on `cohttp`, `lwt`, or `async`.
 
 Allowed dependencies should be justified by one of these needs:
 

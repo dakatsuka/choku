@@ -1,6 +1,6 @@
 let response_for_multipart_error error =
-  Camelio.Response.text ~status:Camelio.Status.bad_request
-    (Format.asprintf "%a\n" Camelio.Multipart.pp_error error)
+  Choku.Response.text ~status:Choku.Status.bad_request
+    (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
 
 let basename path =
   match Eio.Path.split path with None -> "" | Some (_, basename) -> basename
@@ -17,23 +17,22 @@ let drain source =
 let upload ~upload_dir ~random request =
   let files = ref [] in
   match
-    Camelio.Multipart.Streaming.iter_request request
-      ~on_part:(fun part source ->
-        match Camelio.Multipart.Streaming.filename part with
+    Choku.Multipart.Streaming.iter_request request ~on_part:(fun part source ->
+        match Choku.Multipart.Streaming.filename part with
         | None -> drain source
         | Some filename ->
             let saved =
-              Camelio.Multipart.Tempfile.save_source ~dir:upload_dir ~random
+              Choku.Multipart.Tempfile.save_source ~dir:upload_dir ~random
                 ~original_filename:filename source
             in
             let filename =
-              Camelio.Multipart.Tempfile.display_filename saved
+              Choku.Multipart.Tempfile.display_filename saved
               |> Option.value ~default:"upload"
             in
             files :=
               ( filename,
-                Camelio.Multipart.Tempfile.size saved,
-                basename (Camelio.Multipart.Tempfile.path saved) )
+                Choku.Multipart.Tempfile.size saved,
+                basename (Choku.Multipart.Tempfile.path saved) )
               :: !files)
   with
   | Error error -> response_for_multipart_error error
@@ -45,25 +44,25 @@ let upload ~upload_dir ~random request =
               storage_name)
         |> String.concat ""
       in
-      Camelio.Response.text lines
+      Choku.Response.text lines
 
 let handler ~upload_dir ~random request =
-  match Camelio.Request.(meth request, path request) with
-  | Camelio.Method.POST, "/upload" -> upload ~upload_dir ~random request
-  | Camelio.Method.GET, "/health" -> Camelio.Response.text "ok\n"
-  | _ -> Camelio.Response.text ~status:Camelio.Status.not_found "not found\n"
+  match Choku.Request.(meth request, path request) with
+  | Choku.Method.POST, "/upload" -> upload ~upload_dir ~random request
+  | Choku.Method.GET, "/health" -> Choku.Response.text "ok\n"
+  | _ -> Choku.Response.text ~status:Choku.Status.not_found "not found\n"
 
 let () =
   Eio_main.run @@ fun env ->
   Eio.Switch.run @@ fun sw ->
   let net = Eio.Stdenv.net env in
-  let upload_dir = Eio.Path.(Eio.Stdenv.cwd env / "_camelio_uploads") in
+  let upload_dir = Eio.Path.(Eio.Stdenv.cwd env / "_choku_uploads") in
   Eio.Path.mkdirs ~exists_ok:true ~perm:0o700 upload_dir;
   let random = Eio.Stdenv.secure_random env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, 8080) in
   let server =
-    Camelio.Server.create ~request_body_mode:Camelio.Server.Streaming
+    Choku.Server.create ~request_body_mode:Choku.Server.Streaming
       ~handler:(handler ~upload_dir ~random)
       ()
   in
-  Camelio.Server.run ~sw ~net ~addr server
+  Choku.Server.run ~sw ~net ~addr server
