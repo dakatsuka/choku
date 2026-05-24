@@ -53,6 +53,18 @@ let () =
   Server.run ~sw ~net ~addr server
 ```
 
+HTTP/1.1 keep-alive is enabled by default. Buffered requests can reuse the same
+connection sequentially, and Choku writes `Connection: keep-alive` when it will
+wait for another request. Set `~keep_alive:false` if you need one response per
+connection:
+
+```ocaml
+let server = Choku.Server.create ~keep_alive:false ~handler ()
+```
+
+When exposing Choku directly, consider setting `~request_head_timeout:(Some
+seconds)` so idle keep-alive connections do not hold fibers indefinitely.
+
 For small handlers, you can also split `Request.path` yourself. Router patterns
 such as `"/users/:id"` are only interpreted by `Choku.Router`; direct pattern
 matching sees paths as ordinary strings.
