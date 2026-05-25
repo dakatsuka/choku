@@ -25,6 +25,8 @@ module Error = struct
     | Unsupported_upgrade
     | Tls_configuration_failed of string
     | Tls_handshake_failed of exn
+    | Too_many_redirects
+    | Redirect_missing_location
     | Timeout of timeout_phase
 
   let pp_timeout_phase fmt = function
@@ -61,6 +63,9 @@ module Error = struct
         Format.fprintf fmt "TLS configuration failed: %s" reason
     | Tls_handshake_failed exn ->
         Format.fprintf fmt "TLS handshake failed: %s" (Printexc.to_string exn)
+    | Too_many_redirects -> Format.pp_print_string fmt "too many redirects"
+    | Redirect_missing_location ->
+        Format.pp_print_string fmt "redirect missing Location"
     | Timeout phase ->
         Format.fprintf fmt "timeout during %a" pp_timeout_phase phase
 
@@ -82,6 +87,8 @@ module Error = struct
     | Tls_configuration_failed a, Tls_configuration_failed b -> String.equal a b
     | Tls_handshake_failed a, Tls_handshake_failed b ->
         String.equal (Printexc.to_string a) (Printexc.to_string b)
+    | Too_many_redirects, Too_many_redirects -> true
+    | Redirect_missing_location, Redirect_missing_location -> true
     | Timeout a, Timeout b -> a = b
     | _ -> false
 end
@@ -309,6 +316,108 @@ module Middleware = struct
     List.fold_right
       (fun middleware wrapped -> middleware wrapped)
       middlewares handler
+
+  let redirect_method request response =
+    let meth = Request.meth request in
+    match Status.code (Response.status response) with
+    | (301 | 302 | 307 | 308)
+      when Method.equal meth Method.GET || Method.equal meth Method.HEAD ->
+        Some meth
+    | 303 ->
+        Some (if Method.equal meth Method.HEAD then Method.HEAD else Method.GET)
+    | _ -> None
+
+  let scheme_string = function
+    | Request.Http -> "http"
+    | Request.Https -> "https"
+
+  let target_path target =
+    match String.index_opt target '?' with
+    | None -> target
+    | Some index -> String.sub target 0 index
+
+  let strip_fragment location =
+    match String.index_opt location '#' with
+    | None -> location
+    | Some index -> String.sub location 0 index
+
+  let location_url request location =
+    let location = location |> String.trim |> strip_fragment in
+    let lower_location = String.lowercase_ascii location in
+    let base =
+      scheme_string (Request.scheme request) ^ "://" ^ Request.authority request
+    in
+    if
+      String.starts_with ~prefix:"http://" lower_location
+      || String.starts_with ~prefix:"https://" lower_location
+    then Ok location
+    else if String.starts_with ~prefix:"//" location then
+      Ok (scheme_string (Request.scheme request) ^ ":" ^ location)
+    else if String.starts_with ~prefix:"/" location then Ok (base ^ location)
+    else if String.starts_with ~prefix:"?" location then
+      Ok (base ^ target_path (Request.target request) ^ location)
+    else Error (Error.Invalid_url "unsupported redirect location")
+
+  let same_origin a b =
+    Request.scheme a = Request.scheme b
+    && String.equal
+         (String.lowercase_ascii (Request.host a))
+         (String.lowercase_ascii (Request.host b))
+    && Request.port a = Request.port b
+
+  let strip_cross_origin_headers headers =
+    headers
+    |> Headers.remove "authorization"
+    |> Headers.remove "cookie"
+    |> Headers.remove "proxy-authorization"
+
+  let redirect_request request response location =
+    match redirect_method request response with
+    | None -> Ok None
+    | Some meth -> (
+        match location_url request location with
+        | Error _ as error -> error
+        | Ok url -> (
+            let body =
+              if Method.equal meth (Request.meth request) then
+                Request.body request
+              else Body.empty
+            in
+            let headers = Request.headers request in
+            match Request.make ~headers ~body ~meth ~url () with
+            | Error _ as error -> error
+            | Ok next_request ->
+                let next_request =
+                  if same_origin request next_request then next_request
+                  else
+                    Request.with_headers
+                      (strip_cross_origin_headers
+                         (Request.headers next_request))
+                      next_request
+                in
+                Ok (Some next_request)))
+
+  let follow_redirects ?(max_redirects = 5) () =
+    if max_redirects < 0 then invalid_arg "max_redirects < 0";
+    fun handler request ->
+      let rec loop remaining request =
+        match handler request with
+        | Error _ as error -> error
+        | Ok response -> (
+            match redirect_method request response with
+            | None -> Ok response
+            | Some _ -> (
+                match Headers.get "location" (Response.headers response) with
+                | None -> Error Error.Redirect_missing_location
+                | Some location -> (
+                    if remaining = 0 then Error Error.Too_many_redirects
+                    else
+                      match redirect_request request response location with
+                      | Error _ as error -> error
+                      | Ok None -> Ok response
+                      | Ok (Some request) -> loop (remaining - 1) request)))
+      in
+      loop max_redirects request
 end
 
 module Tls = struct

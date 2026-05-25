@@ -152,6 +152,214 @@ let test_middleware_order_and_response_replacement () =
         (Choku.Headers.get "x-transport"
            (Choku.Client.Response.headers response))
 
+let redirect_response status location =
+  Choku.Client.Response.make
+    ~headers:(Choku.Headers.set "location" location Choku.Headers.empty)
+    status
+
+let test_follow_redirects_get_chain () =
+  let seen_urls = ref [] in
+  let handler request =
+    seen_urls := !seen_urls @ [ Choku.Client.Request.url request ];
+    match !seen_urls with
+    | [ _ ] -> Ok (redirect_response Choku.Status.found "/next")
+    | [ _; _ ] -> Ok (redirect_response Choku.Status.found "?page=2")
+    | [ _; _; _ ] -> Ok (Choku.Client.Response.make Choku.Status.ok)
+    | _ -> fail "unexpected redirect request"
+  in
+  let handler =
+    Choku.Client.Middleware.follow_redirects ~max_redirects:3 () handler
+  in
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test/start?old=1" ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok response ->
+      check int "status" 200
+        (Choku.Status.code (Choku.Client.Response.status response));
+      check (list string) "urls"
+        [
+          "http://example.test/start?old=1";
+          "http://example.test/next";
+          "http://example.test/next?page=2";
+        ]
+        !seen_urls
+
+let test_follow_redirects_strips_sensitive_headers_cross_origin () =
+  let seen_authorization = ref [] in
+  let seen_cookie = ref [] in
+  let seen_proxy_authorization = ref [] in
+  let handler request =
+    let headers = Choku.Client.Request.headers request in
+    seen_authorization :=
+      !seen_authorization @ [ Choku.Headers.get "authorization" headers ];
+    seen_cookie := !seen_cookie @ [ Choku.Headers.get "cookie" headers ];
+    seen_proxy_authorization :=
+      !seen_proxy_authorization
+      @ [ Choku.Headers.get "proxy-authorization" headers ];
+    match !seen_authorization with
+    | [ _ ] ->
+        Ok
+          (redirect_response Choku.Status.found "http://other.example.test/done")
+    | [ _; _ ] -> Ok (Choku.Client.Response.make Choku.Status.ok)
+    | _ -> fail "unexpected redirect request"
+  in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let headers =
+    Choku.Headers.empty
+    |> Choku.Headers.set "authorization" "Bearer token"
+    |> Choku.Headers.set "cookie" "session=secret"
+    |> Choku.Headers.set "proxy-authorization" "Basic secret"
+  in
+  let request =
+    request_ok ~headers ~meth:Choku.Method.GET ~url:"http://example.test/start"
+      ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok _ ->
+      check
+        (list (option string))
+        "authorization"
+        [ Some "Bearer token"; None ]
+        !seen_authorization;
+      check
+        (list (option string))
+        "cookie"
+        [ Some "session=secret"; None ]
+        !seen_cookie;
+      check
+        (list (option string))
+        "proxy authorization"
+        [ Some "Basic secret"; None ]
+        !seen_proxy_authorization
+
+let test_follow_redirects_preserves_sensitive_headers_same_origin () =
+  let seen_authorization = ref [] in
+  let handler request =
+    let headers = Choku.Client.Request.headers request in
+    seen_authorization :=
+      !seen_authorization @ [ Choku.Headers.get "authorization" headers ];
+    match !seen_authorization with
+    | [ _ ] ->
+        Ok
+          (redirect_response Choku.Status.found "http://example.test:8080/done")
+    | [ _; _ ] -> Ok (Choku.Client.Response.make Choku.Status.ok)
+    | _ -> fail "unexpected redirect request"
+  in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let headers =
+    Choku.Headers.set "authorization" "Bearer token" Choku.Headers.empty
+  in
+  let request =
+    request_ok ~headers ~meth:Choku.Method.GET
+      ~url:"http://Example.test:8080/start" ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok _ ->
+      check
+        (list (option string))
+        "authorization"
+        [ Some "Bearer token"; Some "Bearer token" ]
+        !seen_authorization
+
+let test_follow_redirects_strips_location_fragment () =
+  let seen_urls = ref [] in
+  let handler request =
+    seen_urls := !seen_urls @ [ Choku.Client.Request.url request ];
+    match !seen_urls with
+    | [ _ ] -> Ok (redirect_response Choku.Status.found "/login#section")
+    | [ _; _ ] -> Ok (Choku.Client.Response.make Choku.Status.ok)
+    | _ -> fail "unexpected redirect request"
+  in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test/start" ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok _ ->
+      check (list string) "urls"
+        [ "http://example.test/start"; "http://example.test/login" ]
+        !seen_urls
+
+let test_follow_redirects_303_rewrites_to_get () =
+  let seen_methods = ref [] in
+  let seen_bodies = ref [] in
+  let handler request =
+    seen_methods := !seen_methods @ [ Choku.Client.Request.meth request ];
+    seen_bodies :=
+      !seen_bodies
+      @ [ Choku.Body.to_string (Choku.Client.Request.body request) ];
+    match !seen_methods with
+    | [ _ ] -> Ok (redirect_response Choku.Status.see_other "/done")
+    | [ _; _ ] -> Ok (Choku.Client.Response.make Choku.Status.ok)
+    | _ -> fail "unexpected redirect request"
+  in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let request =
+    request_ok ~meth:Choku.Method.POST ~url:"http://example.test/form"
+      ~body:(Choku.Body.string "payload")
+      ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok _ ->
+      check
+        (list (module Choku.Method))
+        "methods"
+        [ Choku.Method.POST; Choku.Method.GET ]
+        !seen_methods;
+      check (list string) "bodies" [ "payload"; "" ] !seen_bodies
+
+let test_follow_redirects_does_not_rewrite_post_302 () =
+  let calls = ref 0 in
+  let handler _ =
+    incr calls;
+    Ok (redirect_response Choku.Status.found "/done")
+  in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let request =
+    request_ok ~meth:Choku.Method.POST ~url:"http://example.test/form" ()
+  in
+  match handler request with
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Ok response ->
+      check int "calls" 1 !calls;
+      check int "status" 302
+        (Choku.Status.code (Choku.Client.Response.status response))
+
+let test_follow_redirects_reports_missing_location () =
+  let handler _ = Ok (Choku.Client.Response.make Choku.Status.found) in
+  let handler = Choku.Client.Middleware.follow_redirects () handler in
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test/start" ()
+  in
+  check
+    (result reject client_error)
+    "error" (Error Choku.Client.Error.Redirect_missing_location)
+    (handler request)
+
+let test_follow_redirects_reports_too_many_redirects () =
+  let handler _ = Ok (redirect_response Choku.Status.found "/again") in
+  let handler =
+    Choku.Client.Middleware.follow_redirects ~max_redirects:1 () handler
+  in
+  let request =
+    request_ok ~meth:Choku.Method.GET ~url:"http://example.test/start" ()
+  in
+  check
+    (result reject client_error)
+    "error" (Error Choku.Client.Error.Too_many_redirects) (handler request)
+
 let test_create_rejects_invalid_limits () =
   Eio_main.run @@ fun env ->
   let net = Eio.Stdenv.net env in
@@ -186,7 +394,12 @@ let test_create_rejects_invalid_limits () =
     (Invalid_argument "client timeouts require mono_clock") (fun () ->
       ignore
         (Choku.Client.create ~net ~response_head_timeout:(Some 1.0) ()
-          : Choku.Client.t))
+          : Choku.Client.t));
+  check_raises "negative max redirects" (Invalid_argument "max_redirects < 0")
+    (fun () ->
+      ignore
+        (Choku.Client.Middleware.follow_redirects ~max_redirects:(-1) ()
+          : Choku.Client.Middleware.t))
 
 let test_tls_ca_file_rejects_empty_file () =
   Eio_main.run @@ fun env ->
@@ -323,6 +536,72 @@ let test_request_wire_and_fixed_response () =
           check (option string) "header" (Some "yes")
             (Choku.Headers.get "x-test"
                (Choku.Client.Response.headers response)))
+
+let test_follow_redirects_over_transport () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let targets = ref [] in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:4 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             let request_head = read_request_head flow in
+             if string_contains_sub request_head ~sub:"GET /start HTTP/1.1" then (
+               targets := !targets @ [ "/start" ];
+               Eio.Flow.copy_string
+                 "HTTP/1.1 302 Found\r\n\
+                  Location: /done\r\n\
+                  Content-Length: 0\r\n\
+                  \r\n"
+                 flow)
+             else if string_contains_sub request_head ~sub:"GET /done HTTP/1.1"
+             then (
+               targets := !targets @ [ "/done" ];
+               Eio.Flow.copy_string
+                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok" flow)
+             else failf "unexpected request head: %S" request_head;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client =
+         Choku.Client.create ~net
+           ~middlewares:[ Choku.Client.Middleware.follow_redirects () ]
+           ()
+       in
+       let request =
+         request_ok ~meth:Choku.Method.GET
+           ~url:(Printf.sprintf "http://127.0.0.1:%d/start" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+       | exception _ when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+     in
+     result := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  match !result with
+  | None -> fail "no client result"
+  | Some (Error error) ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+  | Some (Ok response) ->
+      check string "body" "ok"
+        (Choku.Body.to_string (Choku.Client.Response.body response));
+      check (list string) "targets" [ "/start"; "/done" ] !targets
 
 let test_chunked_response_skips_informational () =
   with_raw_server
@@ -689,12 +968,30 @@ let () =
             test_request_replaces_headers_and_body;
           test_case "middleware order and response replacement" `Quick
             test_middleware_order_and_response_replacement;
+          test_case "follow redirects GET chain" `Quick
+            test_follow_redirects_get_chain;
+          test_case "follow redirects strips sensitive headers cross-origin"
+            `Quick test_follow_redirects_strips_sensitive_headers_cross_origin;
+          test_case "follow redirects preserves sensitive headers same-origin"
+            `Quick test_follow_redirects_preserves_sensitive_headers_same_origin;
+          test_case "follow redirects strips Location fragment" `Quick
+            test_follow_redirects_strips_location_fragment;
+          test_case "follow redirects 303 rewrites to GET" `Quick
+            test_follow_redirects_303_rewrites_to_get;
+          test_case "follow redirects does not rewrite POST 302" `Quick
+            test_follow_redirects_does_not_rewrite_post_302;
+          test_case "follow redirects reports missing Location" `Quick
+            test_follow_redirects_reports_missing_location;
+          test_case "follow redirects reports too many redirects" `Quick
+            test_follow_redirects_reports_too_many_redirects;
           test_case "create rejects invalid limits" `Quick
             test_create_rejects_invalid_limits;
           test_case "TLS CA file rejects empty file" `Quick
             test_tls_ca_file_rejects_empty_file;
           test_case "request wire and fixed response" `Quick
             test_request_wire_and_fixed_response;
+          test_case "follow redirects over transport" `Quick
+            test_follow_redirects_over_transport;
           test_case "chunked response skips informational" `Quick
             test_chunked_response_skips_informational;
           test_case "HEAD response is bodyless" `Quick

@@ -37,8 +37,8 @@ types instead of reusing server `Request.t` and `Response.t`.
 - TLS or certificate verification.
 - Connection pooling.
 - Persistent connection reuse.
-- Redirects, cookies, retries, compression, proxy support, CONNECT, WebSocket,
-  or protocol upgrades.
+- Cookies, retries, compression, proxy support, CONNECT, WebSocket, or protocol
+  upgrades.
 - Streaming request uploads or streaming response bodies.
 - A high-level resource context, tracing system, or plugin framework.
 
@@ -135,6 +135,7 @@ module Middleware : sig
   val identity : t
   val compose : t -> t -> t
   val apply : t list -> Handler.t -> Handler.t
+  val follow_redirects : ?max_redirects:int -> unit -> t
 end
 ```
 
@@ -163,6 +164,26 @@ error last. This is enough for user-owned policies such as:
 Middleware remains request/response oriented. Socket creation, DNS resolution,
 timeouts, protocol parsing, and body-size limits stay in the transport layer or
 client configuration.
+
+Redirect following is an opt-in built-in middleware. It wraps the next handler
+and issues a new `Client.Request.t` when the response status and method are
+eligible:
+
+- `301`, `302`, `307`, and `308` are followed only for `GET` and `HEAD`.
+- `303` is followed for any method; the redirected request uses `GET`, except
+  `HEAD` remains `HEAD`.
+- Missing `Location` returns `Client.Error.Redirect_missing_location`.
+- Exceeding `max_redirects` returns `Client.Error.Too_many_redirects`.
+- `max_redirects` defaults to `5` and must be non-negative.
+- Redirect locations support absolute `http://` and `https://` URLs,
+  scheme-relative URLs, path-absolute references, and query-only references.
+- Fragment components are stripped before constructing the next request.
+- Request headers are preserved, except cross-origin redirects strip
+  `Authorization`, `Cookie`, and `Proxy-Authorization`.
+
+The first redirect implementation does not attempt full RFC 3986 relative URL
+resolution. Moving URL parsing and resolution to a dedicated RFC 3986 library is
+a separate design topic.
 
 Because `Client.Request.t` is immutable, the request module should include
 small replacement helpers:

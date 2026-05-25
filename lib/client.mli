@@ -27,6 +27,8 @@ module Error : sig
     | Unsupported_upgrade
     | Tls_configuration_failed of string
     | Tls_handshake_failed of exn
+    | Too_many_redirects
+    | Redirect_missing_location
     | Timeout of timeout_phase
 
   val pp : Format.formatter -> t -> unit
@@ -130,6 +132,30 @@ module Middleware : sig
 
   val apply : t list -> Handler.t -> Handler.t
   (** [apply [a; b; c] h] is [a (b (c h))]. *)
+
+  val follow_redirects : ?max_redirects:int -> unit -> t
+  (** [follow_redirects ?max_redirects ()] follows ordinary HTTP redirects by
+      re-entering the wrapped handler with a new request. The default limit is
+      [5]. [max_redirects] counts followed redirect responses, not total
+      requests.
+
+      [301], [302], [307], and [308] are followed only for [GET] and [HEAD].
+      [303] is followed for any method by rewriting to [GET], except [HEAD]
+      remains [HEAD].
+
+      Redirects without [Location] return [Error Redirect_missing_location].
+      Redirect chains longer than [max_redirects] return
+      [Error Too_many_redirects].
+
+      Redirect [Location] values may be absolute [http://] or [https://] URLs,
+      scheme-relative URLs, path-absolute references, or query-only references.
+      Fragment components are stripped before constructing the next request.
+      Other relative references return [Error (Invalid_url _)].
+
+      Redirects preserve request headers, except cross-origin redirects strip
+      [Authorization], [Cookie], and [Proxy-Authorization].
+
+      @raise Invalid_argument if [max_redirects < 0]. *)
 end
 
 module Tls : sig

@@ -25,7 +25,7 @@ keeping the built-in client focused on basic HTTP transport.
 - Support one request and one fully buffered response per connection.
 - Add a client middleware stack in the first milestone.
 - Keep user-visible errors explicit and testable.
-- Leave room for later TLS, pooling, redirects, cookies, compression, proxy
+- Leave room for later TLS, pooling, cookies, compression, proxy
   support, streaming responses, and streaming request uploads.
 
 ## Non-Goals
@@ -33,7 +33,6 @@ keeping the built-in client focused on basic HTTP transport.
 - HTTPS/TLS.
 - HTTP/2 or HTTP/3.
 - Connection pooling or persistent connection reuse.
-- Redirect following.
 - Cookies.
 - Request retries.
 - Compression or decompression.
@@ -113,6 +112,20 @@ later Choku milestones when they need transport-level support.
 - Middleware can inspect or replace successful `Client.Response.t` values.
 - Middleware can observe or map client errors, but must preserve Eio
   cancellation.
+- Redirect following is opt-in middleware and is never enabled by default.
+- The built-in redirect middleware follows `301`, `302`, `307`, and `308` only
+  for `GET` and `HEAD`.
+- The built-in redirect middleware follows `303` for any method by rewriting to
+  `GET`, except `HEAD` remains `HEAD`.
+- Redirect responses without `Location` return a client error.
+- Redirect chains longer than the configured limit return a client error.
+- Redirect middleware resolves absolute redirect URLs, scheme-relative
+  redirect URLs, path-absolute `Location` values, and query-only `Location`
+  values. Other relative references return an invalid URL error.
+- Redirect middleware strips `Location` fragments before constructing the next
+  request URL.
+- Redirect middleware preserves request headers, except cross-origin redirects
+  strip `Authorization`, `Cookie`, and `Proxy-Authorization`.
 
 ## Public Contracts
 
@@ -143,6 +156,8 @@ module Client : sig
       | Request_body_not_buffered
       | Unsupported_method of Method.t
       | Unsupported_upgrade
+      | Too_many_redirects
+      | Redirect_missing_location
       | Timeout of timeout_phase
 
     val pp : Format.formatter -> t -> unit
@@ -191,6 +206,7 @@ module Client : sig
     val identity : t
     val compose : t -> t -> t
     val apply : t list -> Handler.t -> Handler.t
+    val follow_redirects : ?max_redirects:int -> unit -> t
   end
 
   val create :
@@ -267,6 +283,19 @@ let client =
 Middleware should use `Client.Request.authority` and `Client.Request.target`
 when it needs wire-significant request values; user-provided framing headers may
 be replaced by the transport.
+
+Opt into redirect following with the built-in middleware:
+
+```ocaml
+let client =
+  Choku.Client.create
+    ~net
+    ~middlewares:[ Choku.Client.Middleware.follow_redirects () ]
+    ()
+```
+
+`follow_redirects` defaults to at most five redirects. `max_redirects` must be
+non-negative.
 
 Timeout configuration:
 

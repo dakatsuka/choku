@@ -456,6 +456,20 @@ let client =
 Middleware is applied in list order: for `[a; b]`, `a` sees the request before
 `b` and sees the response or error after `b`.
 
+Redirect following is opt-in middleware:
+
+```ocaml
+let client =
+  Choku.Client.create
+    ~net
+    ~middlewares:[ Choku.Client.Middleware.follow_redirects () ]
+    ()
+```
+
+The middleware follows up to five redirects by default. Pass `~max_redirects`
+to change the limit. Cross-origin redirects strip `Authorization`, `Cookie`, and
+`Proxy-Authorization`.
+
 ## Development
 
 Expected local checks:

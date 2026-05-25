@@ -50,6 +50,7 @@ None.
 - [Implement Minimal HTTP Client](completed/0035-implement-minimal-http-client.md)
 - [Implement HTTPS Client](completed/0036-implement-https-client.md)
 - [Add Client Timeouts](completed/0037-add-client-timeouts.md)
+- [Add Client Follow Redirects](completed/0038-add-client-follow-redirects.md)
 
 ## When To Create A Plan
 
