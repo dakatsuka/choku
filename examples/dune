@@ -9,3 +9,8 @@
  (public_name choku-upload-streaming)
  (modules upload_streaming)
  (libraries choku eio_main))
+
+(executable
+ (name client_fetch)
+ (modules client_fetch)
+ (libraries choku eio_main mirage-crypto-rng.unix))

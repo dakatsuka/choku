@@ -370,40 +370,22 @@ let client_with_ca root net =
   | Ok tls -> Ok (Choku.Client.create ~tls ~net ())
 ```
 
-Try the client from `utop` with Dune's local toplevel:
+Try the client with the local fetch example:
 
 ```sh
-dune utop lib
+dune exec examples/client_fetch.exe -- https://example.com/
 ```
 
-Then load `eio_main` and define a small helper:
+It prints the response status and buffered body size:
 
-```ocaml
-# #require "eio_main";;
-# #require "mirage-crypto-rng.unix";;
-# Mirage_crypto_rng_unix.use_default ();;
-# let fetch url =
-    Eio_main.run @@ fun env ->
-    Eio.Switch.run @@ fun sw ->
-    let open Choku in
-    let net = Eio.Stdenv.net env in
-    let client = Client.create ~net () in
-    match Client.Request.make ~meth:Method.GET ~url () with
-    | Error error -> Error error
-    | Ok request -> Client.request ~sw client request;;
+```text
+status: 200, body bytes: 528
 ```
 
-Call it with an HTTP or HTTPS URL:
+The same helper accepts any supported absolute HTTP or HTTPS URL:
 
-```ocaml
-# match fetch "https://example.com/" with
-  | Error error ->
-      Format.printf "error: %a@." Choku.Client.Error.pp error
-  | Ok response ->
-      Format.printf "status: %d, body bytes: %d@."
-        (Choku.Status.code (Choku.Client.Response.status response))
-        (String.length
-           (Choku.Body.to_string (Choku.Client.Response.body response)));;
+```sh
+dune exec examples/client_fetch.exe -- https://blog.dakatsuka.jp/
 ```
 
 Send a buffered request body by passing `Body.string` and ordinary headers when
