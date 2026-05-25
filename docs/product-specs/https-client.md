@@ -62,6 +62,8 @@ certificate verification.
 - Eio cancellation is re-raised and is not converted to a client error.
 - TLS configuration and handshake failures return explicit `Client.Error.t`
   values.
+- TLS handshake timeout, when configured, returns
+  `Client.Error.Timeout Tls_handshake`.
 - Choku documents that HTTPS use requires Mirage Crypto RNG seeding while TLS is
   active. Examples use `Mirage_crypto_rng_unix.use_default ()`.
 

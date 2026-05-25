@@ -328,6 +328,22 @@ let client =
     ()
 ```
 
+Timeouts are disabled by default. Pass the Eio monotonic clock and finite
+positive second values to bound individual transport phases:
+
+```ocaml
+let client =
+  Choku.Client.create
+    ~net
+    ~mono_clock:(Eio.Stdenv.mono_clock env)
+    ~connect_timeout:(Some 5.0)
+    ~tls_handshake_timeout:(Some 5.0)
+    ~request_write_timeout:(Some 5.0)
+    ~response_head_timeout:(Some 10.0)
+    ~response_body_timeout:(Some 30.0)
+    ()
+```
+
 Programs that make HTTPS requests must initialize the Mirage Crypto RNG before
 using TLS. Add `mirage-crypto-rng.unix` to the executable libraries:
 

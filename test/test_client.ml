@@ -155,6 +155,7 @@ let test_middleware_order_and_response_replacement () =
 let test_create_rejects_invalid_limits () =
   Eio_main.run @@ fun env ->
   let net = Eio.Stdenv.net env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
   check_raises "invalid head limit"
     (Invalid_argument "max_response_head_size <= 0") (fun () ->
       ignore
@@ -163,6 +164,28 @@ let test_create_rejects_invalid_limits () =
     (Invalid_argument "max_response_body_size < 0") (fun () ->
       ignore
         (Choku.Client.create ~net ~max_response_body_size:(-1) ()
+          : Choku.Client.t));
+  check_raises "invalid timeout"
+    (Invalid_argument "non-positive connect_timeout") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~mono_clock ~connect_timeout:(Some 0.0) ()
+          : Choku.Client.t));
+  check_raises "nan timeout"
+    (Invalid_argument "non-positive response_head_timeout") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~mono_clock
+           ~response_head_timeout:(Some Float.nan) ()
+          : Choku.Client.t));
+  check_raises "infinite timeout"
+    (Invalid_argument "non-positive response_body_timeout") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~mono_clock
+           ~response_body_timeout:(Some Float.infinity) ()
+          : Choku.Client.t));
+  check_raises "timeout without mono clock"
+    (Invalid_argument "client timeouts require mono_clock") (fun () ->
+      ignore
+        (Choku.Client.create ~net ~response_head_timeout:(Some 1.0) ()
           : Choku.Client.t))
 
 let test_tls_ca_file_rejects_empty_file () =
@@ -436,6 +459,149 @@ let test_rejects_non_buffered_request_body () =
     "error" (Error Choku.Client.Error.Request_body_not_buffered)
     (Choku.Client.request ~sw client request)
 
+let test_response_head_timeout () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:1 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             ignore (read_request_head flow : string);
+             Eio.Time.sleep clock 0.05;
+             Eio.Flow.copy_string
+               "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok" flow;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client =
+         Choku.Client.create ~net ~mono_clock ~response_head_timeout:(Some 0.02)
+           ()
+       in
+       let request =
+         request_ok ~meth:Choku.Method.GET
+           ~url:(Printf.sprintf "http://127.0.0.1:%d/" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+     in
+     result := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  check
+    (option (Alcotest.result reject client_error))
+    "error"
+    (Some (Error (Choku.Client.Error.Timeout Choku.Client.Error.Response_head)))
+    !result
+
+let test_response_body_timeout () =
+  require_network ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:1 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             ignore (read_request_head flow : string);
+             Eio.Flow.copy_string "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n"
+               flow;
+             Eio.Time.sleep clock 0.05;
+             Eio.Flow.copy_string "ok" flow;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client =
+         Choku.Client.create ~net ~mono_clock ~response_body_timeout:(Some 0.02)
+           ()
+       in
+       let request =
+         request_ok ~meth:Choku.Method.GET
+           ~url:(Printf.sprintf "http://127.0.0.1:%d/" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+     in
+     result := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  check
+    (option (Alcotest.result reject client_error))
+    "error"
+    (Some (Error (Choku.Client.Error.Timeout Choku.Client.Error.Response_body)))
+    !result
+
+let test_tls_handshake_timeout () =
+  require_network ();
+  Mirage_crypto_rng_unix.use_default ();
+  Eio_main.run @@ fun env ->
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let mono_clock = Eio.Stdenv.mono_clock env in
+  let port = available_port () in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  let result = ref None in
+  (try
+     Eio.Switch.run @@ fun sw ->
+     let socket = Eio.Net.listen ~reuse_addr:true ~backlog:1 ~sw net addr in
+     Eio.Fiber.fork ~sw (fun () ->
+         Eio.Net.run_server socket
+           ~on_error:(function
+             | Eio.Cancel.Cancelled _ as exn -> raise exn | _ -> ())
+           (fun flow _addr ->
+             Eio.Time.sleep clock 0.05;
+             Eio.Flow.shutdown flow `All));
+     let rec connect attempts =
+       Eio.Switch.run @@ fun client_sw ->
+       let client =
+         Choku.Client.create ~net ~mono_clock ~tls_handshake_timeout:(Some 0.02)
+           ()
+       in
+       let request =
+         request_ok ~meth:Choku.Method.GET
+           ~url:(Printf.sprintf "https://localhost:%d/" port)
+           ()
+       in
+       match Choku.Client.request ~sw:client_sw client request with
+       | Error (Choku.Client.Error.Connection_failed _) when attempts > 0 ->
+           Eio.Time.sleep clock 0.01;
+           connect (attempts - 1)
+       | response -> response
+     in
+     result := Some (connect 100);
+     Eio.Switch.fail sw Exit
+   with Exit -> ());
+  check
+    (option (Alcotest.result reject client_error))
+    "error"
+    (Some (Error (Choku.Client.Error.Timeout Choku.Client.Error.Tls_handshake)))
+    !result
+
 let test_repeated_requests_under_one_switch () =
   require_network ();
   Eio_main.run @@ fun env ->
@@ -547,6 +713,9 @@ let () =
             test_zero_response_body_limit_allows_empty_only;
           test_case "rejects non-buffered request body" `Quick
             test_rejects_non_buffered_request_body;
+          test_case "response head timeout" `Quick test_response_head_timeout;
+          test_case "response body timeout" `Quick test_response_body_timeout;
+          test_case "TLS handshake timeout" `Quick test_tls_handshake_timeout;
           test_case "repeated requests under one switch" `Quick
             test_repeated_requests_under_one_switch;
           test_case "HTTPS public smoke" `Quick test_https_public_smoke;

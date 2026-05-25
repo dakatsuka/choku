@@ -4,6 +4,14 @@ type t
 (** Client configuration and middleware stack. *)
 
 module Error : sig
+  type timeout_phase =
+    | Connect
+    | Tls_handshake
+    | Request_write
+    | Response_head
+    | Response_body
+        (** Client transport phase whose configured timeout expired. *)
+
   type t =
     | Invalid_url of string
     | Unsupported_scheme of string
@@ -19,6 +27,7 @@ module Error : sig
     | Unsupported_upgrade
     | Tls_configuration_failed of string
     | Tls_handshake_failed of exn
+    | Timeout of timeout_phase
 
   val pp : Format.formatter -> t -> unit
   (** [pp formatter t] formats [t] for diagnostics. *)
@@ -142,12 +151,20 @@ val create :
   ?tls:Tls.t ->
   ?max_response_head_size:int ->
   ?max_response_body_size:int ->
+  ?mono_clock:Eio.Time.Mono.ty Eio.Resource.t ->
+  ?connect_timeout:float option ->
+  ?tls_handshake_timeout:float option ->
+  ?request_write_timeout:float option ->
+  ?response_head_timeout:float option ->
+  ?response_body_timeout:float option ->
   ?middlewares:Middleware.t list ->
-  net:'a Eio.Net.t ->
+  net:_ Eio.Net.t ->
   unit ->
   t
-(** [create ?tls ?max_response_head_size ?max_response_body_size ?middlewares
-     ~net ()] creates an HTTP client.
+(** [create ?tls ?max_response_head_size ?max_response_body_size ?mono_clock
+     ?connect_timeout ?tls_handshake_timeout ?request_write_timeout
+     ?response_head_timeout ?response_body_timeout ?middlewares ~net ()] creates
+    an HTTP client.
 
     The default response head limit is [16_384] bytes. The default response body
     limit is [1_048_576] bytes.
@@ -156,8 +173,14 @@ val create :
     Trust-store loading errors are returned when making an HTTPS request, not
     when creating an HTTP-only client.
 
+    Timeouts default to [None], which disables them. When any timeout is
+    configured, [mono_clock] must be provided. Timeout values are seconds and
+    must be finite and positive.
+
     @raise Invalid_argument
-      if [max_response_head_size <= 0] or [max_response_body_size < 0]. *)
+      if [max_response_head_size <= 0], [max_response_body_size < 0], any
+      timeout is non-finite or non-positive, or any timeout is configured
+      without [mono_clock]. *)
 
 val request : sw:Eio.Switch.t -> t -> Request.t -> (Response.t, Error.t) result
 (** [request ~sw client request] sends one HTTP/1.1 request over one connection

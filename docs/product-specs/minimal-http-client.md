@@ -123,6 +123,13 @@ module Client : sig
   type t
 
   module Error : sig
+    type timeout_phase =
+      | Connect
+      | Tls_handshake
+      | Request_write
+      | Response_head
+      | Response_body
+
     type t =
       | Invalid_url of string
       | Unsupported_scheme of string
@@ -136,6 +143,7 @@ module Client : sig
       | Request_body_not_buffered
       | Unsupported_method of Method.t
       | Unsupported_upgrade
+      | Timeout of timeout_phase
 
     val pp : Format.formatter -> t -> unit
   end
@@ -188,6 +196,12 @@ module Client : sig
   val create :
     ?max_response_head_size:int ->
     ?max_response_body_size:int ->
+    ?mono_clock:_ Eio.Time.Mono.t ->
+    ?connect_timeout:float option ->
+    ?tls_handshake_timeout:float option ->
+    ?request_write_timeout:float option ->
+    ?response_head_timeout:float option ->
+    ?response_body_timeout:float option ->
     ?middlewares:Middleware.t list ->
     net:[> Eio.Net.ty ] Eio.Resource.t ->
     unit ->
@@ -253,6 +267,29 @@ let client =
 Middleware should use `Client.Request.authority` and `Client.Request.target`
 when it needs wire-significant request values; user-provided framing headers may
 be replaced by the transport.
+
+Timeout configuration:
+
+```ocaml
+let client =
+  Choku.Client.create
+    ~net
+    ~mono_clock
+    ~connect_timeout:(Some 5.0)
+    ~tls_handshake_timeout:(Some 5.0)
+    ~request_write_timeout:(Some 5.0)
+    ~response_head_timeout:(Some 10.0)
+    ~response_body_timeout:(Some 30.0)
+    ()
+```
+
+Timeouts default to `None`, which disables timeout enforcement and preserves
+existing behavior. When any timeout is configured, callers must pass
+`~mono_clock` from the Eio environment. Timeout values must be finite and
+positive.
+
+Timeout failures return `Client.Error.Timeout phase`, where `phase` identifies
+the operation that exceeded its configured bound.
 
 ## Open Questions
 

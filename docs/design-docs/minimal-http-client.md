@@ -192,6 +192,12 @@ stack:
 val create :
   ?max_response_head_size:int ->
   ?max_response_body_size:int ->
+  ?mono_clock:_ Eio.Time.Mono.t ->
+  ?connect_timeout:float option ->
+  ?tls_handshake_timeout:float option ->
+  ?request_write_timeout:float option ->
+  ?response_head_timeout:float option ->
+  ?response_body_timeout:float option ->
   ?middlewares:Middleware.t list ->
   net:[> Eio.Net.ty ] Eio.Resource.t ->
   unit ->
@@ -226,6 +232,35 @@ Default limits:
 `Client.create` rejects negative limits and rejects
 `max_response_head_size = 0`. `max_response_body_size = 0` is valid and allows
 only empty response bodies.
+
+Timeout settings are optional and disabled by default. When any timeout is
+configured, `Client.create` requires a monotonic clock:
+
+```ocaml
+Choku.Client.create
+  ~net
+  ~mono_clock:(Eio.Stdenv.mono_clock env)
+  ~connect_timeout:(Some 5.0)
+  ~tls_handshake_timeout:(Some 5.0)
+  ~request_write_timeout:(Some 5.0)
+  ~response_head_timeout:(Some 10.0)
+  ~response_body_timeout:(Some 30.0)
+  ()
+```
+
+Timeout values must be finite and positive. The implementation converts each
+configured float to `Eio.Time.Timeout.seconds mono_clock seconds` at the
+operation boundary. Expiration maps to `Client.Error.Timeout phase`; Eio
+cancellation from outside the timeout is still re-raised.
+
+Timeout phases:
+
+- `Connect`: DNS resolution and TCP connect attempts.
+- `Tls_handshake`: TLS client handshake after TCP connect.
+- `Request_write`: writing the serialized request bytes.
+- `Response_head`: reading and parsing the final response head, including
+  skipped informational heads.
+- `Response_body`: reading the response body after the final head.
 
 The transport sends `Connection: close` in the first milestone. This avoids
 pooling and connection-lifetime complexity while still producing standards-

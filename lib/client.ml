@@ -3,6 +3,13 @@
 module Tls_stack = Tls
 
 module Error = struct
+  type timeout_phase =
+    | Connect
+    | Tls_handshake
+    | Request_write
+    | Response_head
+    | Response_body
+
   type t =
     | Invalid_url of string
     | Unsupported_scheme of string
@@ -18,6 +25,14 @@ module Error = struct
     | Unsupported_upgrade
     | Tls_configuration_failed of string
     | Tls_handshake_failed of exn
+    | Timeout of timeout_phase
+
+  let pp_timeout_phase fmt = function
+    | Connect -> Format.pp_print_string fmt "connect"
+    | Tls_handshake -> Format.pp_print_string fmt "TLS handshake"
+    | Request_write -> Format.pp_print_string fmt "request write"
+    | Response_head -> Format.pp_print_string fmt "response head"
+    | Response_body -> Format.pp_print_string fmt "response body"
 
   let pp fmt = function
     | Invalid_url reason -> Format.fprintf fmt "invalid URL: %s" reason
@@ -46,6 +61,8 @@ module Error = struct
         Format.fprintf fmt "TLS configuration failed: %s" reason
     | Tls_handshake_failed exn ->
         Format.fprintf fmt "TLS handshake failed: %s" (Printexc.to_string exn)
+    | Timeout phase ->
+        Format.fprintf fmt "timeout during %a" pp_timeout_phase phase
 
   let equal a b =
     match (a, b) with
@@ -65,6 +82,7 @@ module Error = struct
     | Tls_configuration_failed a, Tls_configuration_failed b -> String.equal a b
     | Tls_handshake_failed a, Tls_handshake_failed b ->
         String.equal (Printexc.to_string a) (Printexc.to_string b)
+    | Timeout a, Timeout b -> a = b
     | _ -> false
 end
 
@@ -354,6 +372,65 @@ type t = { call : sw:Eio.Switch.t -> Handler.t }
 let default_max_response_head_size = 16_384
 let default_max_response_body_size = 1_048_576
 
+type timeout_config = {
+  mono_clock : Eio.Time.Mono.ty Eio.Resource.t option;
+  connect_timeout : float option;
+  tls_handshake_timeout : float option;
+  request_write_timeout : float option;
+  response_head_timeout : float option;
+  response_body_timeout : float option;
+}
+
+let timeout_configured t =
+  Option.is_some t.connect_timeout
+  || Option.is_some t.tls_handshake_timeout
+  || Option.is_some t.request_write_timeout
+  || Option.is_some t.response_head_timeout
+  || Option.is_some t.response_body_timeout
+
+let positive_finite timeout =
+  match classify_float timeout with
+  | FP_normal | FP_subnormal -> timeout > 0.0
+  | FP_zero | FP_infinite | FP_nan -> false
+
+let validate_timeout name = function
+  | Some timeout when not (positive_finite timeout) ->
+      invalid_arg ("non-positive " ^ name)
+  | _ -> ()
+
+let make_timeout_config ~mono_clock ~connect_timeout ~tls_handshake_timeout
+    ~request_write_timeout ~response_head_timeout ~response_body_timeout =
+  validate_timeout "connect_timeout" connect_timeout;
+  validate_timeout "tls_handshake_timeout" tls_handshake_timeout;
+  validate_timeout "request_write_timeout" request_write_timeout;
+  validate_timeout "response_head_timeout" response_head_timeout;
+  validate_timeout "response_body_timeout" response_body_timeout;
+  let t =
+    {
+      mono_clock;
+      connect_timeout;
+      tls_handshake_timeout;
+      request_write_timeout;
+      response_head_timeout;
+      response_body_timeout;
+    }
+  in
+  if timeout_configured t && Option.is_none mono_clock then
+    invalid_arg "client timeouts require mono_clock";
+  t
+
+let run_with_timeout t phase timeout fn =
+  match timeout with
+  | None -> fn ()
+  | Some seconds -> (
+      match t.mono_clock with
+      | None -> assert false
+      | Some mono_clock -> (
+          let timeout = Eio.Time.Timeout.seconds mono_clock seconds in
+          match Eio.Time.Timeout.run_exn timeout fn with
+          | result -> result
+          | exception Eio.Time.Timeout -> Error (Error.Timeout phase)))
+
 type reader = {
   flow : Eio.Flow.source_ty Eio.Resource.t;
   mutable buffered : string;
@@ -593,8 +670,7 @@ let read_body ~max_response_head_size ~max_response_body_size request reader
               | Error _ as error -> error
               | Ok body -> Ok (Body.string body)))
 
-let rec read_final_response ~max_response_head_size ~max_response_body_size
-    request reader =
+let rec read_final_response_head ~max_response_head_size request reader =
   match read_response_head ~max_response_head_size reader with
   | Error _ as error -> error
   | Ok (status, headers) -> (
@@ -602,15 +678,27 @@ let rec read_final_response ~max_response_head_size ~max_response_body_size
       else
         match Status.class_ status with
         | Informational ->
-            read_final_response ~max_response_head_size ~max_response_body_size
-              request reader
-        | Successful | Redirection | Client_error | Server_error -> (
-            match
-              read_body ~max_response_head_size ~max_response_body_size request
-                reader status headers
-            with
-            | Error _ as error -> error
-            | Ok body -> Ok (Response.make ~headers ~body status)))
+            read_final_response_head ~max_response_head_size request reader
+        | Successful | Redirection | Client_error | Server_error ->
+            Ok (status, headers))
+
+let read_final_response ~timeout_config ~max_response_head_size
+    ~max_response_body_size request reader =
+  match
+    run_with_timeout timeout_config Error.Response_head
+      timeout_config.response_head_timeout (fun () ->
+        read_final_response_head ~max_response_head_size request reader)
+  with
+  | Error _ as error -> error
+  | Ok (status, headers) -> (
+      match
+        run_with_timeout timeout_config Error.Response_body
+          timeout_config.response_body_timeout (fun () ->
+            read_body ~max_response_head_size ~max_response_body_size request
+              reader status headers)
+      with
+      | Error _ as error -> error
+      | Ok body -> Ok (Response.make ~headers ~body status))
 
 let request_wire request body =
   let headers =
@@ -686,13 +774,15 @@ let tls_flow tls flow host =
       | Eio.Cancel.Cancelled _ as exn -> raise exn
       | exn -> Error (Error.Tls_handshake_failed exn))
 
-let transport ~sw ~net ~tls ~max_response_head_size ~max_response_body_size
-    request =
+let transport ~sw ~net ~tls ~timeout_config ~max_response_head_size
+    ~max_response_body_size request =
   if not (Body.is_buffered (Request.body request)) then
     Error Error.Request_body_not_buffered
   else
     match
-      connect_first ~sw net (Request.host request) (Request.port request)
+      run_with_timeout timeout_config Error.Connect
+        timeout_config.connect_timeout (fun () ->
+          connect_first ~sw net (Request.host request) (Request.port request))
     with
     | Error _ as error -> error
     | Ok flow ->
@@ -712,33 +802,51 @@ let transport ~sw ~net ~tls ~max_response_head_size ~max_response_body_size
                 | Https -> (
                     match tls with
                     | Error _ as error -> error
-                    | Ok tls -> tls_flow tls flow (Request.host request))
+                    | Ok tls ->
+                        run_with_timeout timeout_config Error.Tls_handshake
+                          timeout_config.tls_handshake_timeout (fun () ->
+                            tls_flow tls flow (Request.host request)))
               in
               match flow with
               | Error _ as error -> error
-              | Ok flow ->
+              | Ok flow -> (
                   active_flow := Some flow;
                   let body = Body.to_string (Request.body request) in
-                  write_string flow (request_wire request body);
-                  let reader = reader flow in
-                  read_final_response ~max_response_head_size
-                    ~max_response_body_size request reader
+                  let wrote =
+                    run_with_timeout timeout_config Error.Request_write
+                      timeout_config.request_write_timeout (fun () ->
+                        write_string flow (request_wire request body);
+                        Ok ())
+                  in
+                  match wrote with
+                  | Error _ as error -> error
+                  | Ok () ->
+                      let reader = reader flow in
+                      read_final_response ~timeout_config
+                        ~max_response_head_size ~max_response_body_size request
+                        reader)
             with
             | Eio.Cancel.Cancelled _ as exn -> raise exn
             | exn -> Error (Error.Connection_failed exn))
 
 let create ?tls ?(max_response_head_size = default_max_response_head_size)
-    ?(max_response_body_size = default_max_response_body_size)
-    ?(middlewares = []) ~net () =
+    ?(max_response_body_size = default_max_response_body_size) ?mono_clock
+    ?(connect_timeout = None) ?(tls_handshake_timeout = None)
+    ?(request_write_timeout = None) ?(response_head_timeout = None)
+    ?(response_body_timeout = None) ?(middlewares = []) ~net () =
   if max_response_head_size <= 0 then invalid_arg "max_response_head_size <= 0";
   if max_response_body_size < 0 then invalid_arg "max_response_body_size < 0";
+  let timeout_config =
+    make_timeout_config ~mono_clock ~connect_timeout ~tls_handshake_timeout
+      ~request_write_timeout ~response_head_timeout ~response_body_timeout
+  in
   let tls = match tls with Some tls -> Ok tls | None -> Tls.system () in
   let middleware = Middleware.apply middlewares in
   {
     call =
       (fun ~sw ->
         middleware
-          (transport ~sw ~net ~tls ~max_response_head_size
+          (transport ~sw ~net ~tls ~timeout_config ~max_response_head_size
              ~max_response_body_size));
   }
 
