@@ -388,6 +388,13 @@ The same helper accepts any supported absolute HTTP or HTTPS URL:
 dune exec examples/client_fetch.exe -- https://blog.dakatsuka.jp/
 ```
 
+Pass `--headers` or `--body` to inspect the buffered response:
+
+```sh
+dune exec examples/client_fetch.exe -- --headers https://example.com/
+dune exec examples/client_fetch.exe -- --body https://example.com/
+```
+
 Send a buffered request body by passing `Body.string` and ordinary headers when
 building the request. Choku owns wire framing headers such as `Host`,
 `Content-Length`, `Transfer-Encoding`, and `Connection`, so user-provided values

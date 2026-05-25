@@ -8,17 +8,45 @@ let fetch url =
   | Error error -> Error error
   | Ok request -> Client.request ~sw client request
 
+let print_headers headers =
+  headers |> Choku.Headers.to_list
+  |> List.iter (fun (name, value) -> Format.printf "%s: %s@." name value)
+
 let () =
-  Mirage_crypto_rng_unix.use_default ();
-  let url =
-    if Array.length Sys.argv > 1 then Sys.argv.(1) else "https://example.com/"
+  let show_headers = ref false in
+  let show_body = ref false in
+  let url = ref None in
+  let set_url value =
+    match !url with
+    | None -> url := Some value
+    | Some _ -> raise (Arg.Bad "only one URL argument may be provided")
   in
+  let usage =
+    "Usage: client_fetch [--headers] [--body] [URL]\n\
+     Fetch URL, defaulting to https://example.com/."
+  in
+  let specs =
+    [
+      ( "--headers",
+        Arg.Set show_headers,
+        " Print response headers after the summary" );
+      ("--body", Arg.Set show_body, " Print the response body");
+    ]
+  in
+  Arg.parse specs set_url usage;
+  Mirage_crypto_rng_unix.use_default ();
+  let url = Option.value !url ~default:"https://example.com/" in
   match fetch url with
   | Error error ->
       Format.eprintf "error: %a@." Choku.Client.Error.pp error;
       exit 1
   | Ok response ->
+      let body = Choku.Body.to_string (Choku.Client.Response.body response) in
       Format.printf "status: %d, body bytes: %d@."
         (Choku.Status.code (Choku.Client.Response.status response))
-        (String.length
-           (Choku.Body.to_string (Choku.Client.Response.body response)))
+        (String.length body);
+      if !show_headers then (
+        Format.printf "@[<v>headers:@,";
+        print_headers (Choku.Client.Response.headers response);
+        Format.printf "@]@.");
+      if !show_body then Format.printf "@[<v>body:@,%s@]@." body
