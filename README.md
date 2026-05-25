@@ -20,7 +20,8 @@ milestone is a minimal HTTP/1.1 server over plain TCP with:
 - middleware as `Handler.t -> Handler.t`;
 - an optional method-and-path router;
 - buffered and streaming `multipart/form-data` helpers;
-- no HTTP Client, TLS, HTTP/2, or HTTP/3 public APIs yet.
+- a minimal plain HTTP/1.1 client;
+- no TLS, HTTP/2, or HTTP/3 public APIs yet.
 
 ## Usage
 
@@ -31,6 +32,8 @@ Add `choku`, `eio`, and `eio_main` to your executable libraries:
  (name app)
  (libraries choku eio eio_main))
 ```
+
+### Server
 
 Run a minimal server:
 
@@ -277,6 +280,129 @@ For deployment behind nginx, AWS ALB, Classic Load Balancer HTTP(S), or a
 similar reverse proxy, see
 [Reverse Proxy Deployment](docs/product-specs/reverse-proxy-deployment.md).
 
+### Client
+
+Send a simple HTTP client request:
+
+```ocaml
+let () =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let open Choku in
+  let net = Eio.Stdenv.net env in
+  let client = Client.create ~net () in
+  match
+    Client.Request.make
+      ~meth:Method.GET
+      ~url:"http://example.test/status"
+      ()
+  with
+  | Error error ->
+      Format.eprintf "request error: %a@." Client.Error.pp error
+  | Ok request -> (
+      match Client.request ~sw client request with
+      | Error error ->
+          Format.eprintf "client error: %a@." Client.Error.pp error
+      | Ok response ->
+          Printf.printf "status: %d\n"
+            (Status.code (Client.Response.status response));
+          Printf.printf "%s"
+            (Body.to_string (Client.Response.body response)))
+```
+
+The first client milestone accepts absolute `http://` URLs only. It opens one
+plain TCP connection per request, sends `Connection: close`, and returns a fully
+buffered response. The default response limits are 16 KiB for the response head
+and 1 MiB for the response body:
+
+```ocaml
+let client =
+  Choku.Client.create
+    ~net
+    ~max_response_head_size:16_384
+    ~max_response_body_size:1_048_576
+    ()
+```
+
+Try the client from `utop` with Dune's local toplevel:
+
+```sh
+dune utop lib
+```
+
+Then load `eio_main` and define a small helper:
+
+```ocaml
+# #require "eio_main";;
+# let fetch url =
+    Eio_main.run @@ fun env ->
+    Eio.Switch.run @@ fun sw ->
+    let open Choku in
+    let net = Eio.Stdenv.net env in
+    let client = Client.create ~net () in
+    match Client.Request.make ~meth:Method.GET ~url () with
+    | Error error -> Error error
+    | Ok request -> Client.request ~sw client request;;
+```
+
+Call it with a plain HTTP URL:
+
+```ocaml
+# match fetch "http://example.com/" with
+  | Error error ->
+      Format.printf "error: %a@." Choku.Client.Error.pp error
+  | Ok response ->
+      Format.printf "status: %d, body bytes: %d@."
+        (Choku.Status.code (Choku.Client.Response.status response))
+        (String.length
+           (Choku.Body.to_string (Choku.Client.Response.body response)));;
+```
+
+Send a buffered request body by passing `Body.string` and ordinary headers when
+building the request. Choku owns wire framing headers such as `Host`,
+`Content-Length`, `Transfer-Encoding`, and `Connection`, so user-provided values
+for those headers are replaced during serialization.
+
+```ocaml
+let post_json sw net =
+  let open Choku in
+  let client = Client.create ~net () in
+  let headers =
+    Headers.empty
+    |> Headers.set "content-type" "application/json"
+    |> Headers.set "accept" "application/json"
+  in
+  match
+    Client.Request.make
+      ~headers
+      ~body:(Body.string {|{"name":"choku"}|})
+      ~meth:Method.POST
+      ~url:"http://example.test/widgets"
+      ()
+  with
+  | Error error -> Error error
+  | Ok request -> Client.request ~sw client request
+```
+
+Use client middleware for request policies such as authentication, logging, or
+test doubles:
+
+```ocaml
+let bearer token next request =
+  request
+  |> Choku.Client.Request.with_header "authorization" ("Bearer " ^ token)
+  |> next
+
+let client =
+  Choku.Client.create
+    ~net
+    ~middlewares:[ bearer token ]
+    ()
+```
+
+Middleware is applied in list order: for `[a; b]`, `a` sees the request before
+`b` and sees the response or error after `b`.
+
 ## Development
 
 Expected local checks:
@@ -313,5 +439,6 @@ Key design documents:
 - [Project Charter](docs/product-specs/project-charter.md)
 - [Minimal Server API](docs/product-specs/minimal-server-api.md)
 - [Minimal HTTP/1.1 Server Milestone](docs/product-specs/minimal-http1-server.md)
+- [Minimal HTTP Client](docs/product-specs/minimal-http-client.md)
 - [Minimal Server, Handler, and Middleware API](docs/design-docs/minimal-server-handler-middleware-api.md)
 - [Project Layout and Tooling](docs/design-docs/project-layout-and-tooling.md)
