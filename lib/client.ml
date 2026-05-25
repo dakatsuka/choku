@@ -631,6 +631,8 @@ let request_wire request body =
     (Method.to_string (Request.meth request))
     (Request.target request) header_lines body
 
+let write_string flow bytes = Eio.Flow.write flow [ Cstruct.of_string bytes ]
+
 let connect_first ~sw net host port =
   let service = string_of_int port in
   match Eio.Net.getaddrinfo_stream ~service net host with
@@ -717,7 +719,7 @@ let transport ~sw ~net ~tls ~max_response_head_size ~max_response_body_size
               | Ok flow ->
                   active_flow := Some flow;
                   let body = Body.to_string (Request.body request) in
-                  Eio.Flow.copy_string (request_wire request body) flow;
+                  write_string flow (request_wire request body);
                   let reader = reader flow in
                   read_final_response ~max_response_head_size
                     ~max_response_body_size request reader
