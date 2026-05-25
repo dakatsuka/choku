@@ -213,6 +213,30 @@ or test environment, set a finite `request_head_timeout` and bind only to the
 intended interface. Direct deployments still need a separate policy for slow
 request bodies and large uploads.
 
+## Reverse Proxy Examples
+
+The repository includes small reverse proxy examples under `examples/`:
+
+- `reverse_proxy.ml`: forwards requests to one configured upstream and returns
+  the upstream response.
+- `reverse_proxy_rewrite.ml`: forwards requests while adding `X-Forwarded-*`
+  request headers and rewriting text responses.
+
+These examples are intentionally fully buffered and are suitable as API
+examples, not production reverse proxy implementations.
+
+TODO before treating Choku as a production reverse proxy library:
+
+- stream request and response bodies instead of buffering the full exchange;
+- add connection pooling or another upstream connection-management strategy;
+- define a stricter hop-by-hop and forwarded-header policy;
+- define upstream timeout, retry, and circuit-breaking behavior;
+- support upstream selection and load-balancing policies;
+- define large-body and slow-upstream behavior explicitly;
+- add observability hooks for upstream timing, status, and errors;
+- decide whether full RFC 3986 URL parsing and rewriting should use
+  `ocaml-uri`.
+
 ## References
 
 - [Reverse Proxy Deployment References](../references/reverse-proxy-deployment.md)

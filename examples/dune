@@ -14,3 +14,13 @@
  (name client_fetch)
  (modules client_fetch)
  (libraries choku eio_main mirage-crypto-rng.unix))
+
+(executable
+ (name reverse_proxy)
+ (modules reverse_proxy)
+ (libraries choku eio_main mirage-crypto-rng.unix))
+
+(executable
+ (name reverse_proxy_rewrite)
+ (modules reverse_proxy_rewrite)
+ (libraries choku eio_main mirage-crypto-rng.unix))

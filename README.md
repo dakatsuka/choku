@@ -470,6 +470,14 @@ The middleware follows up to five redirects by default. Pass `~max_redirects`
 to change the limit. Cross-origin redirects strip `Authorization`, `Cookie`, and
 `Proxy-Authorization`.
 
+Small reverse proxy examples are available under `examples/`:
+
+```sh
+dune exec examples/hello.exe
+dune exec examples/reverse_proxy.exe -- --listen-port 8081 --upstream http://127.0.0.1:8080
+dune exec examples/reverse_proxy_rewrite.exe -- --listen-port 8082 --upstream http://127.0.0.1:8080
+```
+
 ## Development
 
 Expected local checks:
