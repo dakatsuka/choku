@@ -66,17 +66,17 @@ let server = Choku.Server.create ~keep_alive:false ~handler ()
 When exposing Choku directly, consider setting `~request_head_timeout:(Some
 seconds)` so idle keep-alive connections do not hold fibers indefinitely.
 
-For small handlers, you can also split `Request.path` yourself. Router patterns
-such as `"/users/:id"` are only interpreted by `Choku.Router`; direct pattern
-matching sees paths as ordinary strings.
+For small handlers, you can also pattern-match on `Request.path_segments`.
+Router patterns such as `"/users/:id"` are only interpreted by `Choku.Router`;
+direct pattern matching sees paths as ordinary raw segments.
 
 ```ocaml
 let handler request =
   let open Choku in
-  match Request.(meth request, path request |> String.split_on_char '/') with
-  | Method.GET, [ ""; "users"; id ] ->
+  match Request.(meth request, path_segments request) with
+  | Method.GET, [ "users"; id ] when not (String.equal id "") ->
       Response.text (Printf.sprintf "user %s\n" id)
-  | Method.GET, [ ""; "health" ] ->
+  | Method.GET, [ "health" ] ->
       Response.text "ok\n"
   | _ ->
       Response.text ~status:Status.not_found "not found\n"

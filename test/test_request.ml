@@ -10,12 +10,25 @@ let test_path_strips_query () =
 let test_root_path () =
   check string "path" "/" (Choku.Request.path (request "/"))
 
-let test_path_can_be_split_for_direct_matching () =
-  match
-    Choku.Request.path (request "/users/42?tab=profile")
-    |> String.split_on_char '/'
-  with
-  | [ ""; "users"; id ] -> check string "id" "42" id
+let check_path_segments target expected =
+  check (list string)
+    ("path segments for " ^ target)
+    expected
+    (Choku.Request.path_segments (request target))
+
+let test_path_segments () =
+  check_path_segments "/" [];
+  check_path_segments "/?q=1" [];
+  check_path_segments "/users/42?tab=profile" [ "users"; "42" ];
+  check_path_segments "/users/" [ "users"; "" ];
+  check_path_segments "/users//42" [ "users"; ""; "42" ];
+  check_path_segments "//users" [ ""; "users" ];
+  check_path_segments "/%2F" [ "%2F" ];
+  check_path_segments "/./../x" [ "."; ".."; "x" ]
+
+let test_path_segments_support_direct_matching () =
+  match Choku.Request.path_segments (request "/users/42?tab=profile") with
+  | [ "users"; id ] -> check string "id" "42" id
   | segments ->
       fail
         (Printf.sprintf "unexpected path segments: [%s]"
@@ -49,8 +62,9 @@ let () =
         [
           test_case "path strips query" `Quick test_path_strips_query;
           test_case "root path" `Quick test_root_path;
-          test_case "path can be split for direct matching" `Quick
-            test_path_can_be_split_for_direct_matching;
+          test_case "path segments" `Quick test_path_segments;
+          test_case "path segments support direct matching" `Quick
+            test_path_segments_support_direct_matching;
           test_case "invalid target" `Quick test_invalid_target;
           test_case "space in target" `Quick test_reject_space_in_target;
           test_case "fragment in target" `Quick test_reject_fragment_in_target;

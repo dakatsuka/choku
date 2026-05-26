@@ -278,6 +278,7 @@ module Request : sig
   val meth : t -> Method.t
   val target : t -> string
   val path : t -> string
+  val path_segments : t -> string list
   val headers : t -> Headers.t
   val body : t -> Body.t
 end
@@ -302,8 +303,16 @@ milestone supports origin-form targets. `Request.make` validates `target` and
 raises `Invalid_argument` if it is not a slash-prefixed path with an optional
 query string, or if it contains a fragment marker, control bytes, spaces, or
 DEL. `Request.path` returns the origin-form path without the query string; for
-example, `"/items?a=1"` becomes `"/items"`. Unsupported request-target forms are
-rejected by the HTTP/1 parser before a `Request.t` reaches a handler.
+example, `"/items?a=1"` becomes `"/items"`. `Request.path_segments` returns
+`Request.path` split into URL path segments without the leading slash. The root
+path `"/"` becomes `[]`; `"/users/42"` becomes `["users"; "42"]`; empty
+segments are preserved, so `"/users/"` becomes `["users"; ""]`. It does not
+percent-decode, normalize dot segments, or collapse repeated slashes.
+`Request_head` intentionally keeps only the pre-body metadata accessors needed
+by body-mode selectors; a symmetric `Request_head.path_segments` can be added
+when selector ergonomics need it.
+Unsupported request-target forms are rejected by the HTTP/1 parser before a
+`Request.t` reaches a handler.
 
 This first milestone target contract is server-oriented. HTTP Client uses a
 separate `Client.Request.t` so URI-based outbound requests can evolve without

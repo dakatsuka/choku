@@ -16,5 +16,6 @@ let make ~meth ~target ~headers ~body =
 let meth t = t.meth
 let target t = t.target
 let path t = t.path
+let path_segments t = Request_target.path_segments_of_path t.path
 let headers t = t.headers
 let body t = t.body

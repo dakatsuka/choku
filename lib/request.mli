@@ -21,6 +21,13 @@ val target : t -> string
 val path : t -> string
 (** [path t] returns the origin-form path without the query string. *)
 
+val path_segments : t -> string list
+(** [path_segments t] returns {!path} split into raw URL path segments without
+    the leading slash.
+
+    The root path ["/"] returns the empty list. Empty segments are preserved.
+    Segments are not percent-decoded, normalized, or otherwise interpreted. *)
+
 val headers : t -> Headers.t
 (** [headers t] returns request headers. *)
 

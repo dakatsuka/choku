@@ -100,7 +100,7 @@ let options ?request_body_mode pattern handler router =
 let path_segments path =
   if String.equal path "/" then Some []
   else if String.length path > 0 && Char.equal path.[0] '/' then
-    Some (String.split_on_char '/' (String.sub path 1 (String.length path - 1)))
+    Some (Request_target.path_segments_of_path path)
   else None
 
 let rec match_segments pattern_segments path_segments params =
