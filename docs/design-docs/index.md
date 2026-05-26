@@ -22,6 +22,7 @@ This directory is the source of truth for Choku's technical design.
 - [Router HEAD And 405 Semantics](router-head-and-405.md)
 - [Response Streaming](response-streaming.md)
 - [Route-Level Body Mode](route-level-body-mode.md)
+- [Server Cookie Support](server-cookie-support.md)
 - [Streaming Request Bodies](streaming-request-bodies.md)
 - [Testing Support](testing-support.md)
 - [URL-Encoded Form Support](form-urlencoded.md)
