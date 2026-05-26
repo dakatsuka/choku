@@ -10,6 +10,16 @@ let test_path_strips_query () =
 let test_root_path () =
   check string "path" "/" (Choku.Request.path (request "/"))
 
+let test_query_string () =
+  check (option string) "no query" None
+    (Choku.Request.query_string (request "/items"));
+  check (option string) "empty query" (Some "")
+    (Choku.Request.query_string (request "/items?"));
+  check (option string) "query" (Some "page=2&tag=ocaml")
+    (Choku.Request.query_string (request "/items?page=2&tag=ocaml"));
+  check (option string) "question mark in query" (Some "a?b")
+    (Choku.Request.query_string (request "/items?a?b"))
+
 let check_path_segments target expected =
   check (list string)
     ("path segments for " ^ target)
@@ -62,6 +72,7 @@ let () =
         [
           test_case "path strips query" `Quick test_path_strips_query;
           test_case "root path" `Quick test_root_path;
+          test_case "query string" `Quick test_query_string;
           test_case "path segments" `Quick test_path_segments;
           test_case "path segments support direct matching" `Quick
             test_path_segments_support_direct_matching;

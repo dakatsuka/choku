@@ -279,6 +279,7 @@ module Request : sig
   val target : t -> string
   val path : t -> string
   val path_segments : t -> string list
+  val query_string : t -> string option
   val headers : t -> Headers.t
   val body : t -> Body.t
 end
@@ -308,6 +309,9 @@ example, `"/items?a=1"` becomes `"/items"`. `Request.path_segments` returns
 path `"/"` becomes `[]`; `"/users/42"` becomes `["users"; "42"]`; empty
 segments are preserved, so `"/users/"` becomes `["users"; ""]`. It does not
 percent-decode, normalize dot segments, or collapse repeated slashes.
+`Request.query_string` returns the raw query component without the leading `?`.
+It returns `None` when the target has no query component and `Some ""` for a
+target ending with `?`.
 `Request_head` intentionally keeps only the pre-body metadata accessors needed
 by body-mode selectors; a symmetric `Request_head.path_segments` can be added
 when selector ergonomics need it.

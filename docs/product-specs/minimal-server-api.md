@@ -142,14 +142,18 @@ describe behavior and compatibility expectations, not every helper function.
 
 The server exposes abstract `Request.t`, `Request_head.t`, `Response.t`, and
 `Body.t` types with constructors/accessors for method, target, path, path
-segments, headers, status, and body values. Bodies constructed directly with
-`Body.string` are buffered and replayable. Server-created request streaming
-bodies and response-stream writer bodies are single-consumption.
+segments, query string, headers, status, and body values. Bodies constructed
+directly with `Body.string` are buffered and replayable. Server-created request
+streaming bodies and response-stream writer bodies are single-consumption.
 
 `Request.path_segments` exposes `Request.path` as URL path segments without the
 leading slash for direct handler pattern matching. It preserves empty segments
 and raw segment text; it does not percent-decode, normalize dot segments, or
 collapse repeated slashes.
+
+`Request.query_string` exposes the raw query component without the leading `?`,
+if the request target contains one. Decoded query parameter behavior is
+specified by [Query String Support](query-string.md).
 
 `Request.t` and `Response.t` are server/application oriented. HTTP Client uses
 separate client request and response types, while sharing lower-level protocol

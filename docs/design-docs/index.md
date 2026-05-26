@@ -18,6 +18,7 @@ This directory is the source of truth for Choku's technical design.
 - [Minimal Server, Handler, and Middleware API](minimal-server-handler-middleware-api.md)
 - [Multipart Form-Data Support](multipart-form-data.md)
 - [Project Layout and Tooling](project-layout-and-tooling.md)
+- [Query String Support](query-string.md)
 - [Router HEAD And 405 Semantics](router-head-and-405.md)
 - [Response Streaming](response-streaming.md)
 - [Route-Level Body Mode](route-level-body-mode.md)

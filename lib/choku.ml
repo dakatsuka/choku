@@ -5,6 +5,7 @@ module Headers = Headers
 module Status = Status
 module Body = Body
 module Form = Form
+module Query = Query
 module Multipart = Multipart
 module Request_body_mode = Request_body_mode
 module Request_head = Request_head

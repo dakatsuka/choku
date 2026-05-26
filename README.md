@@ -82,6 +82,20 @@ let handler request =
       Response.text ~status:Status.not_found "not found\n"
 ```
 
+Use `Choku.Query` when a handler needs decoded URL query parameters:
+
+```ocaml
+let page request =
+  let open Choku in
+  match Query.of_request request with
+  | Ok query ->
+      let value = query |> Query.get "page" |> Option.value ~default:"1" in
+      Response.text (Printf.sprintf "page %s\n" value)
+  | Error error ->
+      Response.text ~status:Status.bad_request
+        (Format.asprintf "%a\n" Query.pp_error error)
+```
+
 Use the router when you want path parameters and first-match routing:
 
 ```ocaml

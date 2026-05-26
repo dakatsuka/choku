@@ -28,6 +28,13 @@ val path_segments : t -> string list
     The root path ["/"] returns the empty list. Empty segments are preserved.
     Segments are not percent-decoded, normalized, or otherwise interpreted. *)
 
+val query_string : t -> string option
+(** [query_string t] returns the raw query component without the leading [?], if
+    the request target has one.
+
+    Returns [None] when the target has no query component. Returns [Some ""]
+    when the target ends with [?]. *)
+
 val headers : t -> Headers.t
 (** [headers t] returns request headers. *)
 

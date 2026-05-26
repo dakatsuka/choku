@@ -24,7 +24,7 @@ without committing multipart upload behavior to the same API.
 - Streaming uploads or file storage.
 - Form validation, typed converters, CSRF helpers, or sessions.
 - Character set transcoding or UTF-8 validation.
-- Query-string parsing.
+- Query-specific validation or typed conversion.
 
 ## Requirements
 
@@ -86,7 +86,5 @@ match Choku.Form.of_request request with
 
 ## Open Questions
 
-- Should a later API add query-string parsing with the same ordered multimap
-  behavior?
 - Should a later validation layer build typed field converters on top of
   `Form.t`?

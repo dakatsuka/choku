@@ -14,6 +14,7 @@ Product specs define externally visible behavior and user expectations.
 - [Multipart Form-Data Support](multipart-form-data.md)
 - [Minimal Server API](minimal-server-api.md)
 - [Project Charter](project-charter.md)
+- [Query String Support](query-string.md)
 - [Reverse Proxy Deployment](reverse-proxy-deployment.md)
 - [Response Streaming](response-streaming.md)
 - [Testing Support](testing-support.md)

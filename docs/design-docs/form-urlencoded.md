@@ -116,5 +116,4 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
 
 ## Open Questions
 
-- Should query parsing reuse `Form.t` in a future URI module?
 - Should a future validation module expose typed decoders over `Form.t`?
