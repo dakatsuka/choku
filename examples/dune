@@ -11,6 +11,11 @@
  (libraries choku eio_main))
 
 (executable
+ (name input_binding)
+ (modules input_binding)
+ (libraries choku eio_main))
+
+(executable
  (name client_fetch)
  (modules client_fetch)
  (libraries choku eio_main mirage-crypto-rng.unix))

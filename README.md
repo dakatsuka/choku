@@ -288,6 +288,7 @@ The repository includes runnable examples:
 ```sh
 dune exec choku-hello
 dune exec choku-upload-streaming
+dune exec examples/input_binding.exe
 ```
 
 For deployment behind nginx, AWS ALB, Classic Load Balancer HTTP(S), or a
