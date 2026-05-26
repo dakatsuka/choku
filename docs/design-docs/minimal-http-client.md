@@ -20,6 +20,11 @@ outbound request serialization, inbound response parsing, and client-side
 middleware. It should therefore introduce distinct client request and response
 types instead of reusing server `Request.t` and `Response.t`.
 
+HTTPS support was added by the separate [HTTPS Client](https-client.md)
+milestone. The convenience helper design in this document targets the current
+client API after that milestone and inherits whatever schemes
+`Client.Request.make` currently accepts.
+
 ## Goals
 
 - Design the first HTTP Client milestone before implementation.
@@ -34,7 +39,8 @@ types instead of reusing server `Request.t` and `Response.t`.
 ## Non-Goals
 
 - Implementing the client in this design pass.
-- TLS or certificate verification.
+- TLS or certificate verification in the initial plain client milestone. HTTPS
+  is now covered by the separate [HTTPS Client](https-client.md) design.
 - Connection pooling.
 - Persistent connection reuse.
 - Cookies, retries, compression, proxy support, CONNECT, WebSocket, or protocol
@@ -287,6 +293,116 @@ The transport sends `Connection: close` in the first milestone. This avoids
 pooling and connection-lifetime complexity while still producing standards-
 compatible HTTP/1.1 requests.
 
+## Convenience Request Helpers
+
+The explicit `Client.Request.make` plus `Client.request` flow remains the
+canonical API for code that needs to inspect, store, sign, or transform a
+request before sending. A later convenience layer may add thin helpers for
+common call sites without creating a second transport path.
+
+The convenience layer should expose one arbitrary-method helper:
+
+```ocaml
+val fetch :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  meth:Method.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+```
+
+`fetch ~sw client ?headers ?body ~meth ~url ()` is equivalent to:
+
+```ocaml
+match Client.Request.make ?headers ?body ~meth ~url () with
+| Error error -> Error error
+| Ok request -> Client.request ~sw client request
+```
+
+This means URL and method validation remain owned by `Client.Request.make`.
+When construction fails, middleware and transport are not invoked because no
+`Client.Request.t` exists yet. When construction succeeds, all middleware,
+timeout, redirect, TLS, body-limit, and transport behavior is exactly the
+behavior of `Client.request`.
+
+Only `Client.Request.make` failures bypass middleware. Errors discovered after
+request construction, such as `Request_body_not_buffered`, keep the normal
+`Client.request` behavior and may be observed or mapped by middleware.
+
+Method-specific helpers should be implemented only in terms of `fetch`:
+
+```ocaml
+val get :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val head :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val post :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val put :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val patch :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val delete :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+
+val options :
+  sw:Eio.Switch.t ->
+  Client.t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Client.Response.t, Client.Error.t) result
+```
+
+All helpers accept optional bodies to preserve the low-level request contract
+and avoid encoding method/body policy in convenience functions. Applications
+that want stricter conventions can wrap these helpers in their own module.
+
 ## HTTP/1.1 Serialization
 
 The client request writer should share low-level formatting helpers with the
@@ -411,8 +527,14 @@ make the contracts clear.
 - The initial transport opens one plain TCP connection per request.
 - The initial transport sends `Connection: close`.
 - The initial transport returns a fully buffered response.
-- Core client does not implement redirects, retries, cookies, compression,
-  proxy behavior, TLS, or pooling.
+- The initial core client did not implement redirects, retries, cookies,
+  compression, proxy behavior, TLS, or pooling. Later redirect and HTTPS
+  milestones added their own contracts without changing the convenience helper
+  delegation model.
+- Convenience helpers are thin construction-and-send wrappers over
+  `Client.Request.make` and `Client.request`.
+- Convenience helpers do not add new middleware, timeout, redirect, TLS,
+  buffering, header, or method/body semantics.
 
 ## Alternatives Considered
 
@@ -429,6 +551,12 @@ make the contracts clear.
   than the first milestone needs.
 - Add TLS immediately: rejected because TLS selection and verification policy
   need a separate transport design.
+- Add only method-specific helpers without an arbitrary-method helper: rejected
+  because custom methods would still need boilerplate even when the caller does
+  not need to inspect `Client.Request.t`.
+- Forbid bodies on `GET`, `HEAD`, `DELETE`, or `OPTIONS` helpers: rejected
+  because Choku's lower-level client request contract does not enforce that
+  policy and applications can define stricter local wrappers when needed.
 
 ## Third-Party Review
 
@@ -462,6 +590,13 @@ Design validation:
 Implementation validation for the later milestone:
 
 - unit tests for URL parsing and client request construction;
+- unit tests for convenience helpers delegating to `Request.make` and
+  `Client.request`;
+- unit tests that request-construction errors from convenience helpers do not
+  invoke middleware or transport;
+- unit tests that method-specific helpers pass the expected `Method.t`;
+- unit tests that convenience helpers preserve optional headers and bodies;
+- unit tests that `fetch` preserves arbitrary `Method.Other _` methods;
 - unit tests for client middleware order and error propagation;
 - unit tests for HTTP/1.1 response-head parsing;
 - unit tests for response body framing and limits;
@@ -470,8 +605,6 @@ Implementation validation for the later milestone:
 
 ## Open Questions
 
-- Should convenience helpers such as `Client.get` be included in the first
-  implementation, or should users construct `Client.Request.t` explicitly?
 - Should client middleware receive a small immutable context for timing,
   request ID, or attempt count, or should that remain user-owned state captured
   by closure?

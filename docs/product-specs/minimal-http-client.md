@@ -30,7 +30,8 @@ keeping the built-in client focused on basic HTTP transport.
 
 ## Non-Goals
 
-- HTTPS/TLS.
+- HTTPS/TLS in the initial plain client milestone. HTTPS is now covered by the
+  separate [HTTPS Client](https-client.md) spec.
 - HTTP/2 or HTTP/3.
 - Connection pooling or persistent connection reuse.
 - Cookies.
@@ -43,13 +44,16 @@ keeping the built-in client focused on basic HTTP transport.
 - A high-level JSON, form, OAuth, tracing, or metrics package.
 
 These features may be implemented by users as middleware when possible, or by
-later Choku milestones when they need transport-level support.
+later Choku milestones when they need transport-level support. HTTPS support was
+added by the separate [HTTPS Client](https-client.md) milestone; convenience
+helpers inherit the current `Client.Request.make` scheme support rather than
+redefining it.
 
 ## Requirements
 
-- The first client supports absolute `http://` URLs only.
-- `https://` URLs return a client error instead of silently downgrading to
-  plain HTTP.
+- The initial plain client milestone supported absolute `http://` URLs only.
+- Current `Client.Request.make` accepts the schemes defined by the active
+  client specs, including `http://` and `https://`.
 - The first client rejects `CONNECT` requests because tunneling is out of
   scope.
 - `Client.Request.make` validates URLs and returns an explicit client error for
@@ -126,6 +130,27 @@ later Choku milestones when they need transport-level support.
   request URL.
 - Redirect middleware preserves request headers, except cross-origin redirects
   strip `Authorization`, `Cookie`, and `Proxy-Authorization`.
+- Convenience request helpers are thin wrappers over `Client.Request.make` and
+  `Client.request`; they do not change URL validation, middleware order,
+  transport behavior, timeout behavior, redirect behavior, body buffering, or
+  header ownership.
+- `Client.fetch ~sw client ?headers ?body ~meth ~url ()` constructs a request
+  with `Client.Request.make` and, when construction succeeds, sends it with
+  `Client.request`.
+- If request construction fails, `Client.fetch` returns that error and does not
+  invoke middleware or transport.
+- Only `Client.Request.make` failures bypass middleware. Errors discovered
+  after a `Client.Request.t` exists, such as unsupported request bodies, keep
+  the same middleware and transport behavior as `Client.request`.
+- Method-specific helpers `Client.get`, `Client.head`, `Client.post`,
+  `Client.put`, `Client.patch`, `Client.delete`, and `Client.options` call
+  `Client.fetch` with the corresponding `Method.t`.
+- Convenience helpers accept optional headers and bodies using the same
+  contracts as `Client.Request.make`. They do not enforce additional
+  method/body policy.
+- Applications that need to inspect, store, sign, or transform a
+  `Client.Request.t` before sending should continue to use
+  `Client.Request.make` and `Client.request` directly.
 
 ## Public Contracts
 
@@ -228,6 +253,79 @@ module Client : sig
     t ->
     Request.t ->
     (Response.t, Error.t) result
+
+  val fetch :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    meth:Method.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val get :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val head :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val post :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val put :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val patch :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val delete :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
+
+  val options :
+    sw:Eio.Switch.t ->
+    t ->
+    ?headers:Headers.t ->
+    ?body:Body.t ->
+    url:string ->
+    unit ->
+    (Response.t, Error.t) result
 end
 ```
 
@@ -250,6 +348,16 @@ Simple request:
 ```ocaml
 let fetch sw net =
   let client = Choku.Client.create ~net () in
+  Choku.Client.get ~sw client ~url:"http://example.test/status" ()
+```
+
+Use the explicit request API when application code needs to inspect, store,
+sign, or transform the request value before entering `Client.request` and its
+middleware stack:
+
+```ocaml
+let signed_fetch sw net sign =
+  let client = Choku.Client.create ~net () in
   match
     Choku.Client.Request.make
       ~meth:Choku.Method.GET
@@ -257,7 +365,9 @@ let fetch sw net =
       ()
   with
   | Error error -> Error error
-  | Ok request -> Choku.Client.request ~sw client request
+  | Ok request ->
+      let request = sign request in
+      Choku.Client.request ~sw client request
 ```
 
 Middleware that adds a bearer token:
@@ -322,7 +432,5 @@ the operation that exceeded its configured bound.
 
 ## Open Questions
 
-- Should the first implementation expose convenience functions such as
-  `Client.get`, or keep only `Client.request` until the core contract settles?
 - Should client middleware receive a small request context in addition to
   `Client.Request.t`, or is the request value enough for the first milestone?
