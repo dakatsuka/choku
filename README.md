@@ -291,6 +291,10 @@ dune exec choku-upload-streaming
 dune exec examples/input_binding.exe
 ```
 
+`examples/input_binding.exe` shows one application-side pattern for composing
+path parameters, query parameters, and URL-encoded form fields with OCaml
+`Result` binding operators.
+
 For deployment behind nginx, AWS ALB, Classic Load Balancer HTTP(S), or a
 similar reverse proxy, see
 [Reverse Proxy Deployment](docs/product-specs/reverse-proxy-deployment.md).
