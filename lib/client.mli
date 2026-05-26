@@ -216,3 +216,96 @@ val request : sw:Eio.Switch.t -> t -> Request.t -> (Response.t, Error.t) result
     The caller owns [sw]. Choku closes the connection for each attempt on
     success, client error, non-cancellation exception mapping, and cancellation.
     Eio cancellation is re-raised. *)
+
+val fetch :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  meth:Method.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [fetch ~sw client ?headers ?body ~meth ~url ()] creates a request with
+    {!Request.make} and sends it with {!request}.
+
+    Request-construction errors are returned before middleware or transport is
+    invoked. Once construction succeeds, middleware, timeout, redirect, TLS,
+    body buffering, and transport behavior are exactly those of {!request}. *)
+
+val get :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [get ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.GET ~url ()]. *)
+
+val head :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [head ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.HEAD ~url ()]. *)
+
+val post :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [post ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.POST ~url ()]. *)
+
+val put :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [put ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.PUT ~url ()]. *)
+
+val patch :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [patch ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.PATCH ~url ()]. *)
+
+val delete :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [delete ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.DELETE ~url ()]. *)
+
+val options :
+  sw:Eio.Switch.t ->
+  t ->
+  ?headers:Headers.t ->
+  ?body:Body.t ->
+  url:string ->
+  unit ->
+  (Response.t, Error.t) result
+(** [options ~sw client ?headers ?body ~url ()] is
+    [fetch ~sw client ?headers ?body ~meth:Method.OPTIONS ~url ()]. *)

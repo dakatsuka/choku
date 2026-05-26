@@ -4,9 +4,7 @@ let fetch url =
   let open Choku in
   let net = Eio.Stdenv.net env in
   let client = Client.create ~net () in
-  match Client.Request.make ~meth:Method.GET ~url () with
-  | Error error -> Error error
-  | Ok request -> Client.request ~sw client request
+  Client.get ~sw client ~url ()
 
 let print_headers headers =
   headers |> Choku.Headers.to_list

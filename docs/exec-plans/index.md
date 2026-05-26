@@ -52,6 +52,7 @@ None.
 - [Add Client Timeouts](completed/0037-add-client-timeouts.md)
 - [Add Client Follow Redirects](completed/0038-add-client-follow-redirects.md)
 - [Add Testing Support](completed/0039-add-testing-support.md)
+- [Add Client Convenience Helpers](completed/0040-add-client-convenience-helpers.md)
 
 ## When To Create A Plan
 

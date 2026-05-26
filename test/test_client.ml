@@ -152,6 +152,126 @@ let test_middleware_order_and_response_replacement () =
         (Choku.Headers.get "x-transport"
            (Choku.Client.Response.headers response))
 
+let with_intercept_client observe call =
+  Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
+  let net = Eio.Stdenv.net env in
+  let middleware _next request =
+    observe request;
+    Ok (Choku.Client.Response.make Choku.Status.ok)
+  in
+  let client = Choku.Client.create ~net ~middlewares:[ middleware ] () in
+  call sw client
+
+let expect_ok_response = function
+  | Ok response -> response
+  | Error error ->
+      failf "unexpected response error: %a" Choku.Client.Error.pp error
+
+let test_convenience_preserves_headers_and_body () =
+  let seen = ref None in
+  let headers =
+    Choku.Headers.empty |> Choku.Headers.set "authorization" "Bearer token"
+  in
+  let body = Choku.Body.string "payload" in
+  let response =
+    with_intercept_client
+      (fun request -> seen := Some request)
+      (fun sw client ->
+        Choku.Client.post ~sw client ~headers ~body
+          ~url:"http://example.test/items" ())
+    |> expect_ok_response
+  in
+  check int "status" 200
+    (Choku.Status.code (Choku.Client.Response.status response));
+  match !seen with
+  | None -> fail "expected middleware to observe request"
+  | Some request ->
+      check
+        (module Choku.Method)
+        "method" Choku.Method.POST
+        (Choku.Client.Request.meth request);
+      check (option string) "authorization" (Some "Bearer token")
+        (Choku.Headers.get "authorization"
+           (Choku.Client.Request.headers request));
+      check string "body" "payload"
+        (Choku.Body.to_string (Choku.Client.Request.body request))
+
+let test_convenience_methods_use_expected_methods () =
+  let observed = ref [] in
+  let observe expected request =
+    observed := !observed @ [ Choku.Client.Request.meth request ];
+    check
+      (module Choku.Method)
+      "method" expected
+      (Choku.Client.Request.meth request)
+  in
+  let call expected helper =
+    with_intercept_client (observe expected) (fun sw client ->
+        helper ~sw client ~url:"http://example.test/" ())
+    |> expect_ok_response |> ignore
+  in
+  call Choku.Method.GET (fun ~sw client ~url () ->
+      Choku.Client.get ~sw client ~url ());
+  call Choku.Method.HEAD (fun ~sw client ~url () ->
+      Choku.Client.head ~sw client ~url ());
+  call Choku.Method.POST (fun ~sw client ~url () ->
+      Choku.Client.post ~sw client ~url ());
+  call Choku.Method.PUT (fun ~sw client ~url () ->
+      Choku.Client.put ~sw client ~url ());
+  call Choku.Method.PATCH (fun ~sw client ~url () ->
+      Choku.Client.patch ~sw client ~url ());
+  call Choku.Method.DELETE (fun ~sw client ~url () ->
+      Choku.Client.delete ~sw client ~url ());
+  call Choku.Method.OPTIONS (fun ~sw client ~url () ->
+      Choku.Client.options ~sw client ~url ());
+  check
+    (list (module Choku.Method))
+    "observed methods"
+    [
+      Choku.Method.GET;
+      Choku.Method.HEAD;
+      Choku.Method.POST;
+      Choku.Method.PUT;
+      Choku.Method.PATCH;
+      Choku.Method.DELETE;
+      Choku.Method.OPTIONS;
+    ]
+    !observed
+
+let test_fetch_preserves_arbitrary_method () =
+  let meth = Choku.Method.Other "PROPFIND" in
+  let seen = ref None in
+  with_intercept_client
+    (fun request -> seen := Some request)
+    (fun sw client ->
+      Choku.Client.fetch ~sw client ~meth ~url:"http://example.test/" ())
+  |> expect_ok_response |> ignore;
+  match !seen with
+  | None -> fail "expected middleware to observe request"
+  | Some request ->
+      check
+        (module Choku.Method)
+        "method" meth
+        (Choku.Client.Request.meth request)
+
+let test_fetch_request_construction_error_bypasses_middleware () =
+  let called = ref false in
+  let result =
+    with_intercept_client
+      (fun _request -> called := true)
+      (fun sw client ->
+        Choku.Client.fetch ~sw client ~meth:Choku.Method.GET
+          ~url:"ftp://example.test/" ())
+  in
+  let error =
+    match result with
+    | Ok _response -> fail "expected request construction error"
+    | Error error -> error
+  in
+  check client_error "error" (Choku.Client.Error.Unsupported_scheme "ftp") error;
+  check bool "middleware not called" false !called
+
 let redirect_response status location =
   Choku.Client.Response.make
     ~headers:(Choku.Headers.set "location" location Choku.Headers.empty)
@@ -968,6 +1088,14 @@ let () =
             test_request_replaces_headers_and_body;
           test_case "middleware order and response replacement" `Quick
             test_middleware_order_and_response_replacement;
+          test_case "convenience preserves headers and body" `Quick
+            test_convenience_preserves_headers_and_body;
+          test_case "convenience methods use expected methods" `Quick
+            test_convenience_methods_use_expected_methods;
+          test_case "fetch preserves arbitrary method" `Quick
+            test_fetch_preserves_arbitrary_method;
+          test_case "fetch request construction error bypasses middleware"
+            `Quick test_fetch_request_construction_error_bypasses_middleware;
           test_case "follow redirects GET chain" `Quick
             test_follow_redirects_get_chain;
           test_case "follow redirects strips sensitive headers cross-origin"

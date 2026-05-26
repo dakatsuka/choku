@@ -960,3 +960,29 @@ let create ?tls ?(max_response_head_size = default_max_response_head_size)
   }
 
 let request ~sw t request = t.call ~sw request
+
+let fetch ~sw t ?headers ?body ~meth ~url () =
+  match Request.make ?headers ?body ~meth ~url () with
+  | Error _ as error -> error
+  | Ok request -> t.call ~sw request
+
+let get ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.GET ~url ()
+
+let head ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.HEAD ~url ()
+
+let post ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.POST ~url ()
+
+let put ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.PUT ~url ()
+
+let patch ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.PATCH ~url ()
+
+let delete ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.DELETE ~url ()
+
+let options ~sw t ?headers ?body ~url () =
+  fetch ~sw t ?headers ?body ~meth:Method.OPTIONS ~url ()

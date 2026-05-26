@@ -310,23 +310,14 @@ let () =
   let open Choku in
   let net = Eio.Stdenv.net env in
   let client = Client.create ~net () in
-  match
-    Client.Request.make
-      ~meth:Method.GET
-      ~url:"http://example.test/status"
-      ()
-  with
+  match Client.get ~sw client ~url:"http://example.test/status" () with
   | Error error ->
-      Format.eprintf "request error: %a@." Client.Error.pp error
-  | Ok request -> (
-      match Client.request ~sw client request with
-      | Error error ->
-          Format.eprintf "client error: %a@." Client.Error.pp error
-      | Ok response ->
-          Printf.printf "status: %d\n"
-            (Status.code (Client.Response.status response));
-          Printf.printf "%s"
-            (Body.to_string (Client.Response.body response)))
+      Format.eprintf "client error: %a@." Client.Error.pp error
+  | Ok response ->
+      Printf.printf "status: %d\n"
+        (Status.code (Client.Response.status response));
+      Printf.printf "%s"
+        (Body.to_string (Client.Response.body response))
 ```
 
 The client accepts absolute `http://` and `https://` URLs. It opens one
@@ -444,16 +435,8 @@ let post_json sw net =
     |> Headers.set "content-type" "application/json"
     |> Headers.set "accept" "application/json"
   in
-  match
-    Client.Request.make
-      ~headers
-      ~body:(Body.string {|{"name":"choku"}|})
-      ~meth:Method.POST
-      ~url:"http://example.test/widgets"
-      ()
-  with
-  | Error error -> Error error
-  | Ok request -> Client.request ~sw client request
+  Client.post ~sw client ~headers ~body:(Body.string {|{"name":"choku"}|})
+    ~url:"http://example.test/widgets" ()
 ```
 
 Use client middleware for request policies such as authentication, logging, or
