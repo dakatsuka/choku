@@ -24,3 +24,6 @@ let body t = t.body
 
 let with_header name value t =
   { t with headers = Headers.set name value t.headers }
+
+let add_header name value t =
+  { t with headers = Headers.add name value t.headers }

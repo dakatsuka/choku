@@ -165,7 +165,8 @@ Header lookup is case-insensitive. Header insertion order is preserved.
 `Headers.add` appends, `Headers.set` removes case-insensitive matches and
 appends the replacement, `Headers.remove` removes case-insensitive matches,
 `Headers.get` returns the first matching value, and `Response.with_header` uses
-`Headers.set`.
+`Headers.set`. `Response.add_header` uses `Headers.add` for repeated response
+fields such as `Set-Cookie`.
 
 HTTP method tokens are case-sensitive. Invalid method tokens, invalid status
 codes outside 100 through 599, invalid header names or values, and invalid

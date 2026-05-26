@@ -4,6 +4,7 @@ module Method = Method
 module Headers = Headers
 module Status = Status
 module Body = Body
+module Cookie = Cookie
 module Form = Form
 module Query = Query
 module Multipart = Multipart

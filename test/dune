@@ -6,6 +6,7 @@
   test_body
   test_request
   test_response
+  test_cookie
   test_form
   test_query
   test_multipart

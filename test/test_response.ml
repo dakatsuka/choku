@@ -17,6 +17,15 @@ let test_with_header_sets () =
   check (list string) "single latest value" [ "two" ]
     (Choku.Headers.get_all "x-test" (Choku.Response.headers response))
 
+let test_add_header_appends () =
+  let response =
+    Choku.Response.text "hello"
+    |> Choku.Response.add_header "Set-Cookie" "a=1"
+    |> Choku.Response.add_header "set-cookie" "b=2"
+  in
+  check (list string) "all values" [ "a=1"; "b=2" ]
+    (Choku.Headers.get_all "set-cookie" (Choku.Response.headers response))
+
 let test_with_header_rejects_injection () =
   check_raises "bad name" (Invalid_argument "invalid HTTP header name")
     (fun () ->
@@ -57,6 +66,7 @@ let () =
         [
           test_case "text response" `Quick test_text_response;
           test_case "with_header uses set" `Quick test_with_header_sets;
+          test_case "add_header appends" `Quick test_add_header_appends;
           test_case "with_header rejects injection" `Quick
             test_with_header_rejects_injection;
           test_case "stream response" `Quick test_stream_response;

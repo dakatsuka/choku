@@ -338,6 +338,22 @@ let test_serialize_response () =
      missing\n"
     (Choku.Http1.serialize_response response)
 
+let test_serialize_response_preserves_repeated_set_cookie () =
+  let response =
+    Choku.Response.text "ok" |> Choku.Cookie.set "a" "1"
+    |> Choku.Cookie.set "b" "2"
+  in
+  check string "wire"
+    "HTTP/1.1 200 OK\r\n\
+     content-type: text/plain; charset=utf-8\r\n\
+     set-cookie: a=1\r\n\
+     set-cookie: b=2\r\n\
+     content-length: 2\r\n\
+     connection: close\r\n\
+     \r\n\
+     ok"
+    (Choku.Http1.serialize_response response)
+
 let test_serialize_response_without_body () =
   let response = Choku.Response.text "hello" in
   check string "wire"
@@ -383,6 +399,8 @@ let () =
           test_case "response for request head errors" `Quick
             test_response_for_request_head_errors;
           test_case "serialize response" `Quick test_serialize_response;
+          test_case "serialize response preserves repeated Set-Cookie" `Quick
+            test_serialize_response_preserves_repeated_set_cookie;
           test_case "serialize response without body" `Quick
             test_serialize_response_without_body;
         ] );

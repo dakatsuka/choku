@@ -303,7 +303,8 @@ removes all existing fields whose names match case-insensitively, then appends
 the new field at the end. `Headers.get name headers` returns the first matching
 value in insertion order after applying those rules. `Headers.get_all name
 headers` returns all matching values in insertion order. `Response.with_header`
-uses `Headers.set`.
+uses `Headers.set`. `Response.add_header` uses `Headers.add` for repeated
+response fields such as `Set-Cookie`.
 
 HTTP methods are case-sensitive. `Method.of_string` maps exact uppercase known
 methods such as `"GET"` and `"POST"` to their constructors. Any other valid HTTP
@@ -365,6 +366,7 @@ module Response : sig
   val headers : t -> Headers.t
   val body : t -> Body.t
   val with_header : string -> string -> t -> t
+  val add_header : string -> string -> t -> t
 end
 ```
 

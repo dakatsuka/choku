@@ -48,3 +48,6 @@ val body : t -> Body.t
 
 val with_header : string -> string -> t -> t
 (** [with_header name value t] sets a response header using [Headers.set]. *)
+
+val add_header : string -> string -> t -> t
+(** [add_header name value t] appends a response header using [Headers.add]. *)

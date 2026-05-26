@@ -172,7 +172,22 @@ an empty value, `Max-Age=0`, and
 
 ## Third-Party Review
 
-Pending.
+Initial context-free review found six issues:
+
+- `SameSite=None` without `Secure` creates cookies modern browsers reject;
+- deletion behavior needed a concrete `Expires` decision;
+- malformed request-cookie name handling was underspecified;
+- the original `None` constructor for `SameSite=None` could confuse users who
+  open the module;
+- `Domain` and `Path` validation needed to state that it only protects header
+  serialization;
+- validation should cover top-level `Choku.Cookie` export wiring.
+
+The design now uses `No_restriction` for `SameSite=None`, requires
+`~secure:true` with that value, emits both `Max-Age=0` and fixed past
+`Expires` on deletion, ignores request cookie pairs whose names are not valid
+HTTP tokens, documents `Domain` and `Path` validation scope, and includes export
+coverage in validation. Re-review passed.
 
 ## Validation
 

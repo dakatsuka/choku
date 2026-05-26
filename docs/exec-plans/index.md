@@ -53,6 +53,7 @@ None.
 - [Add Client Follow Redirects](completed/0038-add-client-follow-redirects.md)
 - [Add Testing Support](completed/0039-add-testing-support.md)
 - [Add Client Convenience Helpers](completed/0040-add-client-convenience-helpers.md)
+- [Implement Server Cookie Support](completed/0041-implement-server-cookie-support.md)
 
 ## When To Create A Plan
 

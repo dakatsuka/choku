@@ -96,6 +96,17 @@ let page request =
         (Format.asprintf "%a\n" Query.pp_error error)
 ```
 
+Use `Choku.Cookie` to read request cookies and append `Set-Cookie` response
+headers:
+
+```ocaml
+let remember request =
+  let open Choku in
+  let name = Option.value ~default:"guest" (Cookie.get "name" request) in
+  Response.text (Printf.sprintf "hello %s\n" name)
+  |> Cookie.set ~path:"/" ~http_only:true ~same_site:Cookie.Lax "seen" "1"
+```
+
 Use the router when you want path parameters and first-match routing:
 
 ```ocaml
