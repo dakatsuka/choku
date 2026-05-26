@@ -19,17 +19,17 @@ let require name = function
   | Some value -> Ok value
   | None -> Error (Missing name)
 
-let required_values params request =
+let required_values (ctx : Choku.Router.Context.t) =
   let open Result_syntax in
   let* query_params =
-    Choku.Query.of_request request
+    Choku.Query.of_request ctx.request
     |> Result.map_error (fun error -> Query_error error)
   in
   let* form =
-    Choku.Form.of_request request
+    Choku.Form.of_request ctx.request
     |> Result.map_error (fun error -> Form_error error)
   in
-  let* user_id = Choku.Router.Params.get "id" params |> require "id" in
+  let* user_id = Choku.Router.Params.get "id" ctx.params |> require "id" in
   let* page = Choku.Query.get "page" query_params |> require "page" in
   let* query = Choku.Query.get "q" query_params |> require "q" in
   let+ csrf = Choku.Form.get "csrf" form |> require "csrf" in
@@ -42,8 +42,8 @@ let pp_input_error formatter = function
 
 let bad_request body = Choku.Response.text ~status:Choku.Status.bad_request body
 
-let search params request =
-  match required_values params request with
+let search ctx =
+  match required_values ctx with
   | Error error -> bad_request (Format.asprintf "%a\n" pp_input_error error)
   | Ok values ->
       Choku.Response.text
@@ -52,7 +52,7 @@ let search params request =
 
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/" (fun _params _request ->
+  |> Choku.Router.get "/" (fun _ctx ->
       Choku.Response.text
         "curl -X POST 'http://127.0.0.1:8080/users/42/search?page=1&q=ocaml' \
          -H 'Content-Type: application/x-www-form-urlencoded' --data \

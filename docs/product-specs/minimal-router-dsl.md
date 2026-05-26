@@ -76,7 +76,11 @@ module Router : sig
     val to_list : t -> (string * string) list
   end
 
-  type route_handler = Params.t -> Request.t -> Response.t
+  module Context : sig
+    type t = private { params : Params.t; request : Request.t }
+  end
+
+  type route_handler = Context.t -> Response.t
 
   val empty : t
   val not_found : Handler.t -> t -> t
@@ -106,16 +110,22 @@ Route-level body-mode selection is specified in
 [Route-Level Body Mode](../design-docs/route-level-body-mode.md).
 
 Public `.mli` files must document these contracts with block comments.
+`Router.Context.t` fields are readable by users, but context construction is
+owned by the router.
+
+This is a breaking migration from two-argument route handlers. Existing
+handlers of the form `fun params request -> ...` should become `fun ctx -> ...`,
+with `params` replaced by `ctx.params` and `request` replaced by `ctx.request`.
 
 ## Examples
 
 ```ocaml
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/health" (fun _params _request ->
+  |> Choku.Router.get "/health" (fun _ctx ->
        Choku.Response.text "ok\n")
-  |> Choku.Router.get "/users/:id" (fun params _request ->
-       match Choku.Router.Params.get "id" params with
+  |> Choku.Router.get "/users/:id" (fun ctx ->
+       match Choku.Router.Params.get "id" ctx.params with
        | Some id -> Choku.Response.text ("user=" ^ id ^ "\n")
        | None -> Choku.Response.text ~status:Choku.Status.bad_request "bad route\n")
 

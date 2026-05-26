@@ -15,9 +15,15 @@ module Params = struct
   let to_list t = t
 end
 
+module Context = struct
+  type t = { params : Params.t; request : Request.t }
+
+  let make ~params ~request = { params; request }
+end
+
 type segment = Static of string | Param of string
 type pattern = Root | Segments of segment list
-type route_handler = Params.t -> Request.t -> Response.t
+type route_handler = Context.t -> Response.t
 type body_mode = Request_body_mode.t
 
 type route_entry = {
@@ -170,7 +176,7 @@ let method_not_allowed matches =
 let to_handler router request =
   let matches = path_matches ~path:(Request.path request) router.routes in
   match select_route ~meth:(Request.meth request) matches with
-  | Some (route, params) -> route.handler params request
+  | Some (route, params) -> route.handler (Context.make ~params ~request)
   | None ->
       if List.is_empty matches then router.not_found request
       else method_not_allowed matches

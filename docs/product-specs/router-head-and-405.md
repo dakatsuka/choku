@@ -71,7 +71,7 @@ Existing router behavior changes:
 
 ```ocaml
 Router.empty
-|> Router.get "/health" (fun _ _ -> Response.text "ok\n")
+|> Router.get "/health" (fun _ctx -> Response.text "ok\n")
 ```
 
 now handles both `GET /health` and `HEAD /health`. A `POST /health` request
@@ -82,7 +82,7 @@ returns `405 Method Not Allowed` with an `Allow` header.
 ```ocaml
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
 
 let server = Choku.Server.create_router router
 ```

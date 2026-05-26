@@ -46,16 +46,23 @@ Each route entry stores:
 - a compiled path pattern;
 - a route handler.
 
-The route handler type is router-specific:
+The route handler input is router-specific:
 
 ```ocaml
-type route_handler = Params.t -> Request.t -> Response.t
+module Context : sig
+  type t = private { params : Params.t; request : Request.t }
+end
+
+type route_handler = Context.t -> Response.t
 ```
 
 This lets parameterized routes expose captures without adding route-specific
-metadata to `Request.t`. `Router.to_handler router` returns a plain
-`Handler.t`, so the server and middleware layers do not need to know the router
-exists.
+metadata to `Request.t`. The context record keeps the route handler arity stable
+if later router-specific values need to be exposed. The public interface exposes
+the fields for reads but keeps construction private to the router, so tests and
+applications should get context values through route dispatch rather than
+building them directly. `Router.to_handler router` returns a plain `Handler.t`,
+so the server and middleware layers do not need to know the router exists.
 
 Route registration appends entries. `Router.to_handler` checks entries in the
 same order they were registered and invokes the first method and pattern match.
@@ -121,17 +128,32 @@ module Router : sig
     val to_list : t -> (string * string) list
   end
 
-  type route_handler = Params.t -> Request.t -> Response.t
+  module Context : sig
+    type t = private { params : Params.t; request : Request.t }
+  end
+
+  type route_handler = Context.t -> Response.t
 
   val empty : t
   val not_found : Handler.t -> t -> t
-  val route : Method.t -> string -> route_handler -> t -> t
-  val get : string -> route_handler -> t -> t
-  val post : string -> route_handler -> t -> t
-  val put : string -> route_handler -> t -> t
-  val patch : string -> route_handler -> t -> t
-  val delete : string -> route_handler -> t -> t
-  val options : string -> route_handler -> t -> t
+  type body_mode = Request_body_mode.t
+
+  val route :
+    ?request_body_mode:body_mode ->
+    Method.t ->
+    string ->
+    route_handler ->
+    t ->
+    t
+
+  val get : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val post : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val put : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val patch : ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val delete :
+    ?request_body_mode:body_mode -> string -> route_handler -> t -> t
+  val options :
+    ?request_body_mode:body_mode -> string -> route_handler -> t -> t
   val to_handler : t -> Handler.t
 end
 ```
@@ -152,10 +174,17 @@ replacement not-found handler.
 then appends it to the route list. Convenience functions call `route` with the
 corresponding `Method.t` constructor.
 
-`Router.Params.to_list` preserves the pattern order of captured parameters.
-`Router.Params.get` returns the first value for a name, though duplicate names
-are rejected at pattern compile time. `Router.Params.get_or` returns the first
-value or a caller-provided default when a parameter is absent.
+`Router.Context.t` contains the captured route parameters and the original
+request. Users may read `ctx.params` and `ctx.request`, but only the router
+constructs context values. `Router.Params.to_list` preserves the pattern order
+of captured parameters. `Router.Params.get` returns the first value for a name,
+though duplicate names are rejected at pattern compile time.
+`Router.Params.get_or` returns the first value or a caller-provided default when
+a parameter is absent.
+
+This is a breaking migration from two-argument route handlers. Existing handlers
+of the form `fun params request -> ...` should become `fun ctx -> ...`, with
+`params` replaced by `ctx.params` and `request` replaced by `ctx.request`.
 
 ## Alternatives Considered
 

@@ -23,7 +23,7 @@ let test_create_router_applies_middleware () =
   in
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/" (fun _ _ -> Choku.Response.text "ok")
+    |> Choku.Router.get "/" (fun _ctx -> Choku.Response.text "ok")
   in
   let server = Choku.Server.create_router ~middlewares:[ middleware ] router in
   let response = Choku.Server.handle server request in
@@ -38,11 +38,11 @@ let test_create_router_handle_uses_existing_request_body () =
   let router =
     Choku.Router.empty
     |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/upload" (fun _ req ->
+         "/upload" (fun ctx ->
            check bool "handle body remains buffered" true
-             (Choku.Body.is_buffered (Choku.Request.body req));
+             (Choku.Body.is_buffered (Choku.Request.body ctx.request));
            check string "body" "ping"
-             (Choku.Body.to_string (Choku.Request.body req));
+             (Choku.Body.to_string (Choku.Request.body ctx.request));
            Choku.Response.text "ok")
   in
   let server = Choku.Server.create_router router in
@@ -1289,8 +1289,8 @@ let test_run_router_buffered_route () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.post "/buffered" (fun _ req ->
-        let body = Choku.Request.body req in
+    |> Choku.Router.post "/buffered" (fun ctx ->
+        let body = Choku.Request.body ctx.request in
         check bool "buffered" true (Choku.Body.is_buffered body);
         check string "body" "ping" (Choku.Body.to_string body);
         Choku.Response.text "buffered\n")
@@ -1314,7 +1314,7 @@ let test_run_router_head_falls_back_to_get () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -1332,7 +1332,7 @@ let test_run_router_method_not_allowed () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -1348,7 +1348,7 @@ let test_run_router_method_not_allowed_drains_body_and_reuses () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router (fun flow ->
@@ -1384,7 +1384,7 @@ let test_run_router_method_not_allowed_oversized_body_precedence () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -1402,7 +1402,7 @@ let test_run_router_method_not_allowed_malformed_body_precedence () =
   require_network ();
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -1421,8 +1421,8 @@ let test_run_router_streaming_route () =
   let router =
     Choku.Router.empty
     |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/streaming" (fun _ req ->
-           let request_body = Choku.Request.body req in
+         "/streaming" (fun ctx ->
+           let request_body = Choku.Request.body ctx.request in
            check bool "streaming" false (Choku.Body.is_buffered request_body);
            check
              (result string (of_pp Choku.Body.pp_error))
@@ -1479,15 +1479,14 @@ let test_run_router_does_not_preinvoke_route_handler () =
   let router =
     Choku.Router.empty
     |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/upload" (fun _params ->
+         "/upload" (fun ctx ->
            incr handler_started;
-           fun req ->
-             check
-               (result string (of_pp Choku.Body.pp_error))
-               "body" (Ok "ping")
-               (Choku.Body.to_string_limited ~max_size:4
-                  (Choku.Request.body req));
-             Choku.Response.text "ok\n")
+           check
+             (result string (of_pp Choku.Body.pp_error))
+             "body" (Ok "ping")
+             (Choku.Body.to_string_limited ~max_size:4
+                (Choku.Request.body ctx.request));
+           Choku.Response.text "ok\n")
   in
   let response =
     with_router_server router
@@ -1630,17 +1629,17 @@ let test_run_router_streaming_multipart_upload () =
   in
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ req ->
+    |> Choku.Router.get "/health" (fun ctx ->
         check bool "health body is buffered" true
-          (Choku.Body.is_buffered (Choku.Request.body req));
+          (Choku.Body.is_buffered (Choku.Request.body ctx.request));
         Choku.Response.text "ok\n")
     |> Choku.Router.post ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/upload" (fun _ req ->
+         "/upload" (fun ctx ->
            check bool "request body is streaming" false
-             (Choku.Body.is_buffered (Choku.Request.body req));
+             (Choku.Body.is_buffered (Choku.Request.body ctx.request));
            let file_bytes = ref None in
            match
-             Choku.Multipart.Streaming.iter_request req
+             Choku.Multipart.Streaming.iter_request ctx.request
                ~on_part:(fun part source ->
                  match Choku.Multipart.Streaming.filename part with
                  | Some "router.bin" ->

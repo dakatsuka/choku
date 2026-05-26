@@ -15,7 +15,7 @@ let response_header name response =
 let call router ?meth target =
   Choku.Router.to_handler router (request ?meth target)
 
-let text body _params _request = Choku.Response.text body
+let text body _ctx = Choku.Response.text body
 
 let body_mode =
   testable Choku.Request_body_mode.pp Choku.Request_body_mode.equal
@@ -32,7 +32,7 @@ let test_static_route_matches () =
 let test_unused_route_arguments_can_be_underscores () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok")
+    |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok")
   in
   check string "body" "ok" (response_body (call router "/health"))
 
@@ -47,8 +47,8 @@ let test_head_falls_back_to_get () =
   let seen_method = ref None in
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/health" (fun _params request ->
-        seen_method := Some (Choku.Request.meth request);
+    |> Choku.Router.get "/health" (fun ctx ->
+        seen_method := Some (Choku.Request.meth ctx.request);
         Choku.Response.text "ok")
   in
   let response = call router ~meth:Choku.Method.HEAD "/health" in
@@ -80,10 +80,10 @@ let test_explicit_head_static_wins_over_get_param_fallback () =
 let test_head_fallback_uses_get_params () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/users/:id" (fun params _request ->
+    |> Choku.Router.get "/users/:id" (fun ctx ->
         Choku.Response.text
           (Option.value ~default:"missing"
-             (Choku.Router.Params.get "id" params)))
+             (Choku.Router.Params.get "id" ctx.params)))
   in
   check string "param" "42"
     (response_body (call router ~meth:Choku.Method.HEAD "/users/42"))
@@ -91,8 +91,7 @@ let test_head_fallback_uses_get_params () =
 let test_first_registered_route_wins () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/users/:id" (fun _params _request ->
-        Choku.Response.text "param")
+    |> Choku.Router.get "/users/:id" (fun _ctx -> Choku.Response.text "param")
     |> Choku.Router.get "/users/me" (text "static")
   in
   check string "body" "param" (response_body (call router "/users/me"))
@@ -100,13 +99,14 @@ let test_first_registered_route_wins () =
 let test_parameter_capture () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/users/:id/posts/:post-id" (fun params _request ->
+    |> Choku.Router.get "/users/:id/posts/:post-id" (fun ctx ->
         let id =
-          Option.value ~default:"missing" (Choku.Router.Params.get "id" params)
+          Option.value ~default:"missing"
+            (Choku.Router.Params.get "id" ctx.params)
         in
         let post_id =
           Option.value ~default:"missing"
-            (Choku.Router.Params.get "post-id" params)
+            (Choku.Router.Params.get "post-id" ctx.params)
         in
         Choku.Response.text (id ^ ":" ^ post_id))
   in
@@ -116,12 +116,12 @@ let test_parameter_capture () =
 let test_params_to_list_preserves_pattern_order () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/:first/:second" (fun params _request ->
+    |> Choku.Router.get "/:first/:second" (fun ctx ->
         check
           (list (pair string string))
           "params"
           [ ("first", "one"); ("second", "two") ]
-          (Choku.Router.Params.to_list params);
+          (Choku.Router.Params.to_list ctx.params);
         Choku.Response.text "ok")
   in
   check string "body" "ok" (response_body (call router "/one/two"))
@@ -129,11 +129,11 @@ let test_params_to_list_preserves_pattern_order () =
 let test_params_get_or () =
   let router =
     Choku.Router.empty
-    |> Choku.Router.get "/:first/:second" (fun params _request ->
+    |> Choku.Router.get "/:first/:second" (fun ctx ->
         check string "first" "one"
-          (Choku.Router.Params.get_or ~default:"missing" "first" params);
+          (Choku.Router.Params.get_or ~default:"missing" "first" ctx.params);
         check string "missing" "missing"
-          (Choku.Router.Params.get_or ~default:"missing" "third" params);
+          (Choku.Router.Params.get_or ~default:"missing" "third" ctx.params);
         Choku.Response.text "ok")
   in
   check string "body" "ok" (response_body (call router "/one/two"))
@@ -251,7 +251,7 @@ let test_route_body_mode_uses_first_matching_route () =
   let router =
     Choku.Router.empty
     |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/files/:id" (fun _params _request -> Choku.Response.text "param")
+         "/files/:id" (fun _ctx -> Choku.Response.text "param")
     |> Choku.Router.get "/files/static" (text "static")
   in
   check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
@@ -290,9 +290,9 @@ let test_internal_match_route_does_not_invoke_handler () =
   let router =
     Choku.Router.empty
     |> Choku.Router.get ~request_body_mode:Choku.Request_body_mode.Streaming
-         "/users/:id" (fun _params ->
+         "/users/:id" (fun _ctx ->
            incr handler_started;
-           fun _request -> Choku.Response.text "ok")
+           Choku.Response.text "ok")
   in
   check (option body_mode) "body mode" (Some Choku.Request_body_mode.Streaming)
     (matched_body_mode "/users/42" router);

@@ -207,7 +207,7 @@ Router-backed server:
 ```ocaml
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/" (fun _ _ -> Choku.Response.text "hello")
+  |> Choku.Router.get "/" (fun _ctx -> Choku.Response.text "hello")
 
 let server = Choku.Server.create_router router
 ```

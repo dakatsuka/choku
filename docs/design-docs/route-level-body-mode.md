@@ -194,9 +194,9 @@ constructed.
 ## Usage
 
 ```ocaml
-let upload params request =
-  let user_id = Choku.Router.Params.get "id" params in
-  match Choku.Multipart.Streaming.iter_request request ~on_part:save_part with
+let upload ctx =
+  let user_id = Choku.Router.Params.get "id" ctx.params in
+  match Choku.Multipart.Streaming.iter_request ctx.request ~on_part:save_part with
   | Ok () -> Choku.Response.text "uploaded\n"
   | Error error ->
       Choku.Response.text ~status:Choku.Status.bad_request
@@ -204,7 +204,7 @@ let upload params request =
 
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/health" (fun _params _request ->
+  |> Choku.Router.get "/health" (fun _ctx ->
        Choku.Response.text "ok\n")
   |> Choku.Router.post
        ~request_body_mode:Choku.Request_body_mode.Streaming

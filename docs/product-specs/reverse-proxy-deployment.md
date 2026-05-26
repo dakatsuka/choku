@@ -170,7 +170,7 @@ Use a cheap buffered route:
 ```ocaml
 let router =
   Choku.Router.empty
-  |> Choku.Router.get "/health" (fun _ _ -> Choku.Response.text "ok\n")
+  |> Choku.Router.get "/health" (fun _ctx -> Choku.Response.text "ok\n")
 ```
 
 `HEAD /health` is also handled automatically through the router's `GET`

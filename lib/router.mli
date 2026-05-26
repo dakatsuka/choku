@@ -21,8 +21,17 @@ module Params : sig
   (** [to_list t] returns captured parameters in route-pattern order. *)
 end
 
-type route_handler = Params.t -> Request.t -> Response.t
-(** A route handler receives route parameters and the original request. *)
+module Context : sig
+  type t = private { params : Params.t; request : Request.t }
+  (** Context for a matched route.
+
+      [params] contains the captured route parameters. [request] is the original
+      request passed to the router. Context values are constructed by the router
+      during dispatch. *)
+end
+
+type route_handler = Context.t -> Response.t
+(** A route handler receives context for the matched route. *)
 
 type body_mode = Request_body_mode.t
 (** Request body delivery mode for a route. *)

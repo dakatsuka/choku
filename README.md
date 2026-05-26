@@ -114,9 +114,9 @@ Use the router when you want path parameters and first-match routing:
 let router =
   let open Choku in
   Router.empty
-  |> Router.get "/" (fun _ _ -> Response.text "hello\n")
-  |> Router.get "/users/:id" (fun params _ ->
-         match Router.Params.get "id" params with
+  |> Router.get "/" (fun _ctx -> Response.text "hello\n")
+  |> Router.get "/users/:id" (fun ctx ->
+         match Router.Params.get "id" ctx.params with
          | None -> Response.text ~status:Status.not_found "not found\n"
          | Some id -> Response.text (Printf.sprintf "user %s\n" id))
 
@@ -133,10 +133,10 @@ For router-backed servers, individual routes can opt into streaming request
 bodies while other routes stay buffered:
 
 ```ocaml
-let upload params request =
+let upload ctx =
   let open Choku in
-  let user_id = Router.Params.get "id" params in
-  match Multipart.Streaming.iter_request request ~on_part:save_part with
+  let user_id = Router.Params.get "id" ctx.params in
+  match Multipart.Streaming.iter_request ctx.request ~on_part:save_part with
   | Ok () ->
       Response.text
         (Printf.sprintf "uploaded for user %s\n"
@@ -148,7 +148,7 @@ let upload params request =
 let router =
   let open Choku in
   Router.empty
-  |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
+  |> Router.get "/health" (fun _ctx -> Response.text "ok\n")
   |> Router.post
        ~request_body_mode:Request_body_mode.Streaming
        "/users/:id/avatar"
@@ -203,7 +203,7 @@ upload routes need streaming bodies:
 let router =
   let open Choku in
   Router.empty
-  |> Router.get "/health" (fun _ _ -> Response.text "ok\n")
+  |> Router.get "/health" (fun _ctx -> Response.text "ok\n")
   |> Router.post
        ~request_body_mode:Request_body_mode.Streaming
        "/upload"
