@@ -153,7 +153,8 @@ collapse repeated slashes.
 
 `Request.query_string` exposes the raw query component without the leading `?`,
 if the request target contains one. Decoded query parameter behavior is
-specified by [Query String Support](query-string.md).
+specified by [Query String Support](query-string.md). `Request_head` exposes
+the same raw query string before body delivery.
 
 `Request.t` and `Response.t` are server/application oriented. HTTP Client uses
 separate client request and response types, while sharing lower-level protocol

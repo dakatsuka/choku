@@ -49,7 +49,8 @@ val create_with_request_body_selector :
 
     The selector runs once per successfully parsed request head, before the
     request body is read and before middleware or handler execution. It may
-    inspect method, target, path, and headers through {!Request_head}.
+    inspect method, target, path, query string, and headers through
+    {!Request_head}.
 
     If the selector raises a non-cancellation exception, the server writes
     [500 Internal Server Error] when possible and closes the connection. HEAD

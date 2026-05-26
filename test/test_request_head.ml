@@ -10,12 +10,22 @@ let test_fields () =
     (Choku.Method.equal Choku.Method.GET (Choku.Request_head.meth head));
   check string "target" "/upload?part=1" (Choku.Request_head.target head);
   check string "path" "/upload" (Choku.Request_head.path head);
+  check (option string) "query string" (Some "part=1")
+    (Choku.Request_head.query_string head);
   check (option string) "header" (Some "stream")
     (Choku.Headers.get "x-mode" (Choku.Request_head.headers head))
 
 let test_does_not_require_host () =
   let head = head "/" in
   check string "path" "/" (Choku.Request_head.path head)
+
+let test_query_string () =
+  check (option string) "no query" None
+    (Choku.Request_head.query_string (head "/items"));
+  check (option string) "empty query" (Some "")
+    (Choku.Request_head.query_string (head "/items?"));
+  check (option string) "question mark in query" (Some "a?b")
+    (Choku.Request_head.query_string (head "/items?a?b"))
 
 let test_invalid_target () =
   check_raises "invalid target" (Invalid_argument "invalid origin-form target")
@@ -38,6 +48,7 @@ let () =
         [
           test_case "fields" `Quick test_fields;
           test_case "does not require Host" `Quick test_does_not_require_host;
+          test_case "query string" `Quick test_query_string;
           test_case "invalid target" `Quick test_invalid_target;
           test_case "control targets" `Quick test_reject_control_targets;
         ] );

@@ -13,6 +13,7 @@ request-target representation or exposing a third-party URI type.
 ## Goals
 
 - Expose the raw query string from server requests.
+- Expose the same raw query string from pre-body request heads.
 - Provide a `Choku.Query` ordered multimap for decoded query parameters.
 - Preserve repeated parameter order.
 - Decode `+` as space and percent-encoded bytes.
@@ -38,6 +39,8 @@ request-target representation or exposing a third-party URI type.
   between an absent query component and an empty query component.
 - The first `?` separates path from query, so `"/items?a?b"` returns
   `Some "a?b"`.
+- `Request_head.query_string` follows the same raw query contract as
+  `Request.query_string`.
 - `Query.t` is an immutable ordered multimap of parameter names to values.
 - `Query.decode` parses a raw query string.
 - `Query.decode` expects input without a leading `?`; a leading `?` in the
@@ -80,6 +83,10 @@ end
 module Request : sig
   val query_string : t -> string option
 end
+
+module Request_head : sig
+  val query_string : t -> string option
+end
 ```
 
 Public `.mli` files must document these contracts with block comments.
@@ -101,9 +108,3 @@ match Choku.Query.of_request request with
 
 - Should a later API add an internal `ocaml-uri` dependency for broader URI
   parsing while keeping `Choku.Query` as the public surface?
-
-## Known Limitations
-
-- `Request_head` does not expose `query_string` yet. Pre-body selectors that
-  need query data must inspect `Request_head.target` directly until a later
-  milestone adds a symmetric accessor.

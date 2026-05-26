@@ -283,6 +283,17 @@ module Request : sig
   val headers : t -> Headers.t
   val body : t -> Body.t
 end
+
+module Request_head : sig
+  type t
+
+  val make : meth:Method.t -> target:string -> headers:Headers.t -> t
+  val meth : t -> Method.t
+  val target : t -> string
+  val path : t -> string
+  val query_string : t -> string option
+  val headers : t -> Headers.t
+end
 ```
 
 `Headers.get` and `Headers.get_all` use case-insensitive field-name lookup while
@@ -312,9 +323,10 @@ percent-decode, normalize dot segments, or collapse repeated slashes.
 `Request.query_string` returns the raw query component without the leading `?`.
 It returns `None` when the target has no query component and `Some ""` for a
 target ending with `?`.
-`Request_head` intentionally keeps only the pre-body metadata accessors needed
-by body-mode selectors; a symmetric `Request_head.path_segments` can be added
-when selector ergonomics need it.
+`Request_head.query_string` exposes the same raw query component before body
+delivery. `Request_head` intentionally keeps only the pre-body metadata
+accessors needed by body-mode selectors; a symmetric
+`Request_head.path_segments` can be added when selector ergonomics need it.
 Unsupported request-target forms are rejected by the HTTP/1 parser before a
 `Request.t` reaches a handler.
 

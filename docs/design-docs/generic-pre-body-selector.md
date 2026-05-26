@@ -44,14 +44,15 @@ module Request_head : sig
   val meth : t -> Method.t
   val target : t -> string
   val path : t -> string
+  val query_string : t -> string option
   val headers : t -> Headers.t
 end
 ```
 
 `Request_head.t` mirrors the request metadata available before body delivery:
-method, raw origin-form target, query-stripped path, and headers. It deliberately
-does not expose body framing, decoded query parameters, host parsing, connection
-state, or protocol version.
+method, raw origin-form target, query-stripped path, raw query string, and
+headers. It deliberately does not expose body framing, decoded query parameters,
+host parsing, connection state, or protocol version.
 
 `Request_head.make` should validate the same origin-form target subset as
 `Request.make`. It should not enforce the HTTP/1.1 server-specific `Host`
@@ -126,6 +127,7 @@ The selector may inspect:
 - `Request_head.meth`;
 - `Request_head.target`;
 - `Request_head.path`;
+- `Request_head.query_string`;
 - `Request_head.headers`.
 
 The selector must not depend on request body bytes. It should normally be a

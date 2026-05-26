@@ -25,15 +25,15 @@ without requiring applications to use the built-in router.
 - Keep `Handler.t = Request.t -> Response.t`.
 - Preserve existing `Server.create ?request_body_mode` behavior.
 - Avoid exposing HTTP/1.1 parser internals as public API.
-- Provide enough request-head information for method, path, target, and header
-  based body-mode selection.
+- Provide enough request-head information for method, path, target, raw query,
+  and header based body-mode selection.
 - Keep selector behavior consistent with route-level body mode.
 
 ## Non-Goals
 
 - Selecting body mode from request body bytes.
 - Per-route middleware or routing features.
-- Query parsing, path normalization, or percent-decoding.
+- Decoded query parsing, path normalization, or percent-decoding.
 - Per-route body-size limits.
 - Per-route timeout policy.
 - Changing `Router.t` route-level body mode behavior.
@@ -43,7 +43,8 @@ without requiring applications to use the built-in router.
 
 - Add a public `Request_head.t` representing a parsed request head before body
   delivery.
-- `Request_head.t` exposes method, target, query-stripped path, and headers.
+- `Request_head.t` exposes method, target, query-stripped path, raw query
+  string, and headers.
 - `Request_head.t` contains no body and no protocol-specific connection state.
 - `Request_head.make` validates the same origin-form target subset as
   `Request.make` so selectors can be unit-tested without a socket.
@@ -95,6 +96,7 @@ module Request_head : sig
   val meth : t -> Method.t
   val target : t -> string
   val path : t -> string
+  val query_string : t -> string option
   val headers : t -> Headers.t
 end
 

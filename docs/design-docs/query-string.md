@@ -20,6 +20,8 @@ manually or tying the public API to a third-party URI type.
 ## Goals
 
 - Add `Request.query_string` for the raw query component.
+- Add `Request_head.query_string` with the same raw query contract for pre-body
+  selectors.
 - Add `Choku.Query` as an abstract ordered multimap for query parameters.
 - Keep `Request.t` and `Query.t` small and explicit.
 - Share URL-encoded component decoding between `Form` and `Query`.
@@ -31,7 +33,7 @@ manually or tying the public API to a third-party URI type.
 - Exposing a URI type through `Request.t`.
 - Query-based routing.
 - Path normalization, path percent-decoding, or route parameter decoding.
-- Adding query accessors to `Request_head` in this pass.
+- Query parameter decoding directly from `Request_head`.
 
 ## Proposed Design
 
@@ -43,6 +45,10 @@ origin-form target:
 - `"/items?"` becomes `Some ""`;
 - `"/items?page=1"` becomes `Some "page=1"`;
 - `"/items?a?b"` becomes `Some "a?b"`.
+
+`Request_head.t` stores the same `query_string : string option` value. This
+keeps generic pre-body selectors from reparsing `Request_head.target` when body
+mode selection depends on raw query presence or value.
 
 `Query.t` is an abstract ordered multimap represented internally as
 `(string * string) list`. Its accessors mirror `Form`:
@@ -95,10 +101,14 @@ end
 module Request : sig
   val query_string : t -> string option
 end
+
+module Request_head : sig
+  val query_string : t -> string option
+end
 ```
 
 All public functions and types in `query.mli` and `request.mli` must have block
-comments.
+comments. `request_head.mli` must document the symmetric raw query accessor.
 
 ## Alternatives Considered
 
@@ -123,7 +133,7 @@ the path/query separator, and that accidental leading `?` input to
 entries as empty-name, empty-value parameters, documents first-`?` splitting,
 and treats a leading `?` passed to `Query.decode` as literal parameter-name
 text. The review also asked to document decoded control-byte behavior and the
-absence of `Request_head.query_string`; both are now explicit.
+pre-body selector impact of query access; both are now explicit.
 
 ## Validation
 
@@ -138,12 +148,5 @@ Implementation should follow Explore -> Red -> Green -> Refactor:
 
 ## Open Questions
 
-- Should a later milestone add `Request_head.query_string` for pre-body
-  selectors?
 - Should `ocaml-uri` become an internal dependency when Choku needs broader URI
   parsing for client redirects or server absolute-form support?
-
-## Known Limitations
-
-- Pre-body selectors that need query data must inspect `Request_head.target`
-  directly until `Request_head.query_string` is designed.

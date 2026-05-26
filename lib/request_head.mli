@@ -22,5 +22,12 @@ val target : t -> string
 val path : t -> string
 (** [path t] returns the origin-form path without the query string. *)
 
+val query_string : t -> string option
+(** [query_string t] returns the raw query component without the leading [?], if
+    the request target has one.
+
+    Returns [None] when the target has no query component. Returns [Some ""]
+    when the target ends with [?]. *)
+
 val headers : t -> Headers.t
 (** [headers t] returns request headers. *)
