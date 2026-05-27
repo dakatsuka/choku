@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -113,7 +113,7 @@ milestone explicitly adds empty-segment pattern support.
 
 ## Contracts
 
-The first implementation should add:
+The current public contract is:
 
 ```ocaml
 module Router : sig
@@ -195,8 +195,9 @@ of the form `fun params request -> ...` should become `fun ctx -> ...`, with
 - Add regex paths immediately: rejected because regular expression syntax,
   capture naming, dependency choice, and performance behavior deserve a
   separate design.
-- Add automatic `HEAD` fallback and 405 behavior in the initial router: deferred
-  to keep the first router milestone focused. Later specified by
+- Add automatic `HEAD` fallback and 405 behavior in the initial router:
+  initially deferred to keep the first router milestone focused, then later
+  specified and implemented by
   [Router HEAD And 405 Semantics](router-head-and-405.md).
 
 ## Third-Party Review
@@ -210,16 +211,16 @@ module rather than a major architectural change.
 
 ## Validation
 
-Implementation should follow Explore -> Red -> Green -> Refactor:
+The completed implementation followed Explore -> Red -> Green -> Refactor:
 
-- add `lib/router.mli` with contracts first;
-- add `test/test_router.ml` before implementation;
-- test static route matching, method matching, first-match order, parameter
+- added `lib/router.mli` with contracts first;
+- added `test/test_router.ml` before implementation;
+- tested static route matching, method matching, first-match order, parameter
   captures, query ignoring, default not-found, custom not-found, invalid
   patterns including empty segments, and `Params` accessors;
-- run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
+- ran `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
   @check`, `dune build @install`, and `opam lint choku.opam`;
-- request context-free implementation review after the code is written.
+- requested context-free implementation review after the code was written.
 
 ## Open Questions
 

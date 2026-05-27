@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -69,7 +69,7 @@ or non-hex digits. Parsing returns the first malformed-encoding error.
 
 ## Contracts
 
-The first implementation should add:
+The current public contract is:
 
 ```ocaml
 module Form : sig
@@ -105,19 +105,19 @@ All public functions and types in `form.mli` must have block comments.
 
 ## Third-Party Review
 
-Not run in this implementation pass because the available multi-agent tool may
-only be used when the user explicitly requests delegation. The design is narrow,
-covered by behavior tests, and leaves multipart streaming as a separate design.
+The initial implementation pass recorded the delegation constraint instead of a
+context-free third-party review. The design is narrow, covered by behavior
+tests, and leaves multipart handling as a separate design.
 
 ## Validation
 
-Implementation should follow Explore -> Red -> Green -> Refactor:
+The completed implementation followed Explore -> Red -> Green -> Refactor:
 
-- add `lib/form.mli` with contracts first;
-- add `test/test_form.ml` before implementation;
-- test decoding, repeated fields, empty names and values, malformed percent
+- added `lib/form.mli` with contracts first;
+- added `test/test_form.ml` before implementation;
+- tested decoding, repeated fields, empty names and values, malformed percent
   escapes, `Content-Type` handling, and accessors;
-- run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
+- ran `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
   @check`, `dune build @install`, and `opam lint choku.opam`.
 
 ## Open Questions

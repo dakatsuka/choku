@@ -2,7 +2,11 @@
 
 ## Status
 
-Draft
+Superseded
+
+This document records the first architecture sketch. Current architecture and
+module contracts are governed by the accepted subsystem design documents, the
+product specs, and the public `.mli` files.
 
 ## Context
 

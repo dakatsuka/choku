@@ -91,4 +91,4 @@ with PASS.
 
 ## Commit
 
-Pending.
+`docs: design minimal http client`

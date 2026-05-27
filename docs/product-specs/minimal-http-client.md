@@ -329,8 +329,7 @@ module Client : sig
 end
 ```
 
-The exact names may change during implementation, but the first milestone must
-preserve these product-level contracts:
+The implemented helpers preserve these product-level contracts:
 
 - client request and response types are separate from server request and
   response types;
@@ -432,5 +431,6 @@ the operation that exceeded its configured bound.
 
 ## Open Questions
 
-- Should client middleware receive a small request context in addition to
-  `Client.Request.t`, or is the request value enough for the first milestone?
+- Should client middleware receive a small immutable context for timing,
+  request ID, or attempt count, or should that remain user-owned state captured
+  by closure?

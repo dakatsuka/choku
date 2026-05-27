@@ -102,4 +102,4 @@ stale public docs; both were fixed and reverified.
 
 ## Commit
 
-Pending.
+`feat: support chunked request bodies`

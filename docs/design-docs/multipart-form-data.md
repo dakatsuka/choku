@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -113,7 +113,7 @@ application-owned; failed copies remove partial files on a best-effort basis.
 
 ## Contracts
 
-The first implementation should add:
+The current public contract is:
 
 ```ocaml
 module Multipart : sig
@@ -205,19 +205,20 @@ All public functions and types in `multipart.mli` must have block comments.
 
 ## Third-Party Review
 
-Not run in this pass because the available multi-agent tool may only be used
-when the user explicitly requests delegation. The design is intentionally
-limited to Phase 1 and covered with behavior tests.
+The initial buffered pass recorded the delegation constraint instead of a
+context-free third-party review. Later multipart phases added bounded reads,
+streaming iteration, filename sanitization, and tempfile helpers with their own
+execution-plan reviews.
 
 ## Validation
 
-Implementation should follow Explore -> Red -> Green -> Refactor:
+The completed multipart phases followed Explore -> Red -> Green -> Refactor:
 
-- add `lib/multipart.mli` with contracts first;
-- add `test/test_multipart.ml` before implementation;
-- test request content-type handling, boundary extraction, basic parts,
+- added `lib/multipart.mli` with contracts first;
+- added `test/test_multipart.ml` before implementation;
+- tested request content-type handling, boundary extraction, basic parts,
   repeated fields, filenames, part content types, and malformed bodies;
-- run `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
+- ran `dune build @all`, `dune runtest`, `dune build @fmt`, `dune build
   @check`, `dune build @install`, and `opam lint choku.opam`.
 
 ## Open Questions

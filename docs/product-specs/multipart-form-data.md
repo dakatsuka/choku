@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Problem
 
@@ -22,8 +22,9 @@ for large uploads.
 
 ## Non-Goals
 
-- Streaming multipart parsing in the first phase.
-- Writing uploaded files automatically.
+- Streaming multipart parsing as default behavior. Streaming upload handling is
+  explicit through `Multipart.Streaming`.
+- Automatic upload storage policy.
 - Nested multipart parsing.
 - RFC 5987 extended parameter decoding such as `filename*`.
 - Header continuation lines.
@@ -174,7 +175,7 @@ match Choku.Multipart.of_request request with
     | Some part ->
         let filename = Choku.Multipart.Part.filename part in
         let bytes = Choku.Body.to_string (Choku.Multipart.Part.body part) in
-        (* Phase 1 keeps part bodies buffered. *)
+        (* The buffered helper keeps part bodies buffered. *)
         Choku.Response.text
           (Printf.sprintf "filename=%s bytes=%d\n"
              (Option.value ~default:"" filename)
@@ -204,14 +205,14 @@ let handler ~upload_dir ~random request =
         (Format.asprintf "%a\n" Choku.Multipart.pp_error error)
 ```
 
-## Phases
+## Implemented Phases
 
-- Phase 1: buffered multipart parser over existing `Body.t`.
-- Phase 2: part-level consumer helpers for copying file parts to Eio sinks and
+- Buffered multipart parser over existing `Body.t`.
+- Part-level consumer helpers for copying file parts to Eio sinks and
   paths.
-- Phase 3: opt-in server streaming request bodies and
+- Opt-in server streaming request bodies and
   `Multipart.Streaming.iter_request` for callback-scoped streaming part sources.
-- Phase 4: filename sanitization and generated tempfile helpers.
+- Filename sanitization and generated tempfile helpers.
 
 ## Open Questions
 

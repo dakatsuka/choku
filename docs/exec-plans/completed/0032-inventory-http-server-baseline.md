@@ -74,4 +74,4 @@ that.
 
 ## Commit
 
-Pending.
+`docs: inventory http server baseline`

@@ -84,4 +84,4 @@ and the network server test harness.
 
 ## Commit
 
-Pending.
+`fix: tighten HTTP/1.1 request semantics`

@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Problem
 
@@ -156,5 +156,3 @@ let server = Choku.Server.create_router router
   URI module?
 - Should a later router milestone support trailing-slash routes or repeated
   slash semantics?
-- Should a later milestone add a generic pre-body selector API in addition to
-  the router-specific `Server.create_router` entry point?

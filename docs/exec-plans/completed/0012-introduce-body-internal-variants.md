@@ -98,4 +98,4 @@ internal constructor makes it directly testable.
 
 ## Commit
 
-Pending.
+`refactor: introduce body internal variants`

@@ -2,14 +2,14 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
-Choku currently validates server request targets as HTTP origin-form values.
+Choku validates server request targets as HTTP origin-form values.
 `Request.target` preserves the raw target, while `Request.path` and
 `Request.path_segments` expose query-stripped path views for handlers and the
-router. Query parameters are not currently parsed.
+router. `Choku.Query` parses raw query strings into a small ordered multimap.
 
 The `Form` module already implements the `application/x-www-form-urlencoded`
 field model: an ordered multimap, `+` as space, percent-decoded bytes, repeated
@@ -19,10 +19,10 @@ manually or tying the public API to a third-party URI type.
 
 ## Goals
 
-- Add `Request.query_string` for the raw query component.
-- Add `Request_head.query_string` with the same raw query contract for pre-body
-  selectors.
-- Add `Choku.Query` as an abstract ordered multimap for query parameters.
+- Provide `Request.query_string` for the raw query component.
+- Provide `Request_head.query_string` with the same raw query contract for
+  pre-body selectors.
+- Provide `Choku.Query` as an abstract ordered multimap for query parameters.
 - Keep `Request.t` and `Query.t` small and explicit.
 - Share URL-encoded component decoding between `Form` and `Query`.
 - Leave room to use `ocaml-uri` internally later without exposing `Uri.t`.
@@ -85,7 +85,7 @@ the same malformed-percent behavior.
 
 ## Contracts
 
-The first implementation should add:
+The current implementation provides:
 
 ```ocaml
 module Query : sig
@@ -142,14 +142,14 @@ pre-body selector impact of query access; both are now explicit.
 
 ## Validation
 
-Implementation should follow Explore -> Red -> Green -> Refactor:
+The completed implementation followed Explore -> Red -> Green -> Refactor:
 
-- add `query.mli` and request contracts;
-- add `test/test_query.ml` and extend `test/test_request.ml` before
+- added `query.mli` and request contracts;
+- added `test/test_query.ml` and extended `test/test_request.ml` before
   implementation;
-- cover absent query, empty query, repeated parameters, empty names and values,
+- covered absent query, empty query, repeated parameters, empty names and values,
   `+` decoding, percent decoding, malformed percent escapes, and accessors;
-- run `dune fmt`, focused tests, and `dune runtest`.
+- ran `dune fmt`, focused tests, and `dune runtest`.
 
 ## Open Questions
 

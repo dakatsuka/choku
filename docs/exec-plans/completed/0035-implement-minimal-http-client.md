@@ -84,4 +84,4 @@ the reviewed edge cases. Re-review passed.
 
 ## Commit
 
-Pending.
+`feat: add minimal http client`

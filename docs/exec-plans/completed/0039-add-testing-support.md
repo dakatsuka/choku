@@ -86,4 +86,4 @@ severity suggestion for future direct lifecycle coverage of standalone
 
 ## Commit
 
-To be filled when committed.
+`feat: add testing support helpers`

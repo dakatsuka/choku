@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -28,7 +28,6 @@ with backpressure and structured resource ownership.
 
 ## Non-Goals
 
-- Implementing streaming in this design pass.
 - HTTP/2 or HTTP/3 flow-control design.
 - Automatic tempfile management.
 - Transparent background body draining.
@@ -149,20 +148,17 @@ replace the future streaming multipart parser.
 
 ## Validation
 
-Before implementation:
+Completed implementation covered:
 
-- write an execution plan for the `Body.t` transition;
-- decide whether `Body.to_string` remains total, takes a limit, or gets split
-  into buffered-only and consuming variants;
-- add tests for buffered compatibility and streaming one-shot behavior;
-- add HTTP/1.1 tests proving handlers can consume request bodies directly.
+- an execution plan for the `Body.t` transition;
+- `Body.to_string` as a buffered-only compatibility helper and
+  `Body.to_string_limited` as the bounded consuming variant;
+- tests for buffered compatibility and streaming one-shot behavior;
+- HTTP/1.1 tests proving handlers can consume request bodies directly.
 
 ## Open Questions
 
 - Should streaming bodies be single-consumption by type instead of runtime
   state?
-- Should the server expose per-route body buffering policy in addition to
-  per-server mode? A proposed design is captured in
-  [Route-Level Body Mode](route-level-body-mode.md).
 - How should future HTTP/2 flow control integrate with the same `Body.t`
   abstraction?

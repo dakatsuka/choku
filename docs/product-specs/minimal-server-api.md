@@ -234,9 +234,9 @@ let outbound_request =
 
 ## Open Questions
 
-- Which request-target and URI helpers should be shared after HTTP Client
-  support is implemented?
-- Which TLS library or abstraction should be used by future client/server
-  transport support?
+- Which URI or request-target helpers, if any, should be shared between server
+  requests and client request construction after the client API has settled?
+- Which TLS abstraction, if any, should be used by future server-side TLS
+  support?
 - What body, trailer, multiplexing, and lifecycle abstractions are needed before
   HTTP/2 or HTTP/3 can be designed?

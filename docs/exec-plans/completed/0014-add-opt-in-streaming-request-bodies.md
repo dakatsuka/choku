@@ -109,4 +109,4 @@ gap, and stale interface docs. All were fixed, and the second re-review passed.
 
 ## Commit
 
-Pending.
+`feat: add opt-in streaming request bodies`

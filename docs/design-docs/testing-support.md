@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -118,9 +118,10 @@ listener.
 
 ## Third-Party Review
 
-Not yet performed. The current tool session does not have user-authorized
-sub-agent delegation. Before expanding this beyond the first small helper
-library, request a context-free design review.
+The implementation plan requested context-free design review and incorporated
+feedback before implementation. Code review found two medium-severity issues in
+streaming test-body caps and `Server.run_listener` switch usage; both were
+fixed before completion.
 
 ## Validation
 

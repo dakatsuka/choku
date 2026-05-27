@@ -2,7 +2,12 @@
 
 ## Status
 
-Draft
+Superseded
+
+This first server API design has been superseded by the accepted
+[Minimal Server API](../product-specs/minimal-server-api.md),
+[Minimal HTTP/1.1 Server Milestone](../product-specs/minimal-http1-server.md),
+and subsystem-specific design documents.
 
 ## Context
 

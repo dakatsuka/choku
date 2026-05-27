@@ -2,7 +2,11 @@
 
 ## Status
 
-Draft
+Superseded
+
+This document records the pre-bootstrap layout design. The current repository
+layout is represented by the checked-in Dune files, public interfaces, tests,
+and the completed bootstrap execution plan.
 
 ## Context
 

@@ -83,4 +83,4 @@ passed.
 
 ## Commit
 
-Pending.
+`refactor: build server requests from parsed head`

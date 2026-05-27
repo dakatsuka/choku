@@ -104,4 +104,4 @@ case. Re-review passed.
 
 ## Commit
 
-Pending.
+`feat: add streaming multipart iterator`

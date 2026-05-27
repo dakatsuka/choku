@@ -47,17 +47,6 @@ validation framework:
 - consider tiny helper contracts only when they remove integration friction
   without owning validation policy.
 
-### HTTP Client Convenience APIs
-
-The minimal client exposes `Client.Request.make` and `Client.request`. Future
-client work may add convenience functions such as `Client.get` or `Client.post`
-if they remain thin wrappers over the existing request contract.
-
-This is likely smaller than a validation layer because the core client behavior
-already exists. The design should decide whether convenience helpers improve
-common use without hiding method, header, body, timeout, redirect, or TLS
-semantics that applications need to control.
-
 ### Router Follow-Up Features
 
 Future router work may include:
@@ -79,12 +68,12 @@ one coherent subsystem.
 
 ## Current Next Priorities
 
-1. Design and implement thin HTTP Client convenience APIs if they keep the
-   existing explicit client contract intact.
-2. Design an input mapping and validation interoperability strategy that helps
+1. Design an input mapping and validation interoperability strategy that helps
    users map Choku inputs into their own application types without making Choku
    own validation policy.
-3. Add response streaming follow-up APIs such as file responses or server-sent
+2. Add response streaming follow-up APIs such as file responses or server-sent
    events when a concrete use case needs them.
+3. Design an optional upload storage policy only if route-local application
+   upload code keeps repeating the same safe-storage decisions.
 4. Defer production reverse proxy features until streaming proxy behavior and
    upstream policy are ready for a dedicated milestone.
