@@ -36,16 +36,17 @@ Choku should not grow a general-purpose validator until requirements are clear,
 but applications still need a smooth path from HTTP inputs to application-owned
 types.
 
-Future design work should focus on interoperability rather than a built-in
-validation framework:
+The interoperability boundary is captured in
+[Input Mapping Interoperability](input-mapping-interoperability.md). Follow-up
+work should stay within that boundary:
 
 - keep low-level input collections simple and predictable;
 - make it easy to lift missing fields and parse errors into application-defined
   error types;
 - document examples that compose with third-party validators or typed
   converters;
-- consider tiny helper contracts only when they remove integration friction
-  without owning validation policy.
+- add only tiny helper contracts, such as `Router.Params.get_all`, when they
+  remove integration friction without owning validation policy.
 
 ### Router Follow-Up Features
 
@@ -68,12 +69,9 @@ one coherent subsystem.
 
 ## Current Next Priorities
 
-1. Design an input mapping and validation interoperability strategy that helps
-   users map Choku inputs into their own application types without making Choku
-   own validation policy.
-2. Add response streaming follow-up APIs such as file responses or server-sent
+1. Add response streaming follow-up APIs such as file responses or server-sent
    events when a concrete use case needs them.
-3. Design an optional upload storage policy only if route-local application
+2. Design an optional upload storage policy only if route-local application
    upload code keeps repeating the same safe-storage decisions.
-4. Defer production reverse proxy features until streaming proxy behavior and
+3. Defer production reverse proxy features until streaming proxy behavior and
    upstream policy are ready for a dedicated milestone.

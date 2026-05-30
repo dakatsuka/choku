@@ -9,6 +9,7 @@ Product specs define externally visible behavior and user expectations.
 - [Minimal HTTP Client](minimal-http-client.md)
 - [Generic Pre-Body Selector](generic-pre-body-selector.md)
 - [HTTPS Client](https-client.md)
+- [Input Mapping Interoperability](input-mapping-interoperability.md)
 - [HTTP/1.1 Persistent Connections](http1-persistent-connections.md)
 - [Router HEAD And 405 Semantics](router-head-and-405.md)
 - [Server Cookie Support](server-cookie-support.md)
