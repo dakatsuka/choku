@@ -14,6 +14,7 @@ module Request = Request
 module Response = Response
 module Handler = Handler
 module Middleware = Middleware
+module Access_log = Access_log
 module Router = Router
 module Http1 = Http1
 module Server = Server

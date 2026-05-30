@@ -118,8 +118,9 @@ event model, not the only logging path.
 - After the writer is closed, calls to the writer sink are no-ops even when
   overflow policy is `Block`.
 - Error callback non-cancellation exceptions are ignored so logging failure
-  never propagates into request fibers. Error callback cancellation is preserved
-  in the writer fiber.
+  never propagates into request fibers. Error callbacks run in the writer fiber
+  and must not call `Writer.sink` or `Writer.flush` on the same writer.
+  Error callback cancellation is preserved in the writer fiber.
 - The writer exposes a flush operation so tests and graceful shutdown paths can
   wait until events queued before the flush call have been written or learn that
   the writer closed after a write failure.
@@ -221,6 +222,8 @@ been dropped. Flush markers are never dropped; in `Drop` mode, `flush` still
 waits until its marker can be enqueued or observes writer closure. It returns
 `Error error` when the writer has already closed because of a flow write failure
 or writer cancellation. It does not prevent later events from being enqueued.
+If a flow write fails, the writer closes and wakes blocked producers and flushes
+before invoking `on_error`.
 
 The public `.mli` file must document that middleware events are handler-level
 events, not complete server access events.

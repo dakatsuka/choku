@@ -203,9 +203,9 @@ Formatter failure and flow write failure have different semantics:
 
 - Formatter failure: call `on_error (Formatter_failed exn)` if present, omit
   that event, and continue processing later commands.
-- Flow write failure: call `on_error` if present, transition state to
-  `Closed (Write_failed exn)`, resolve queued and future flushes with
-  `Error (Write_failed exn)`, wake any blocked producers, and stop writing.
+- Flow write failure: transition state to `Closed (Write_failed exn)`, resolve
+  queued and future flushes with `Error (Write_failed exn)`, wake any blocked
+  producers, call `on_error` if present, and stop writing.
 - Writer fiber cancellation or finalization from switch cancellation:
   transition state to `Closed (Writer_cancelled exn)`, resolve queued and future
   flushes with `Error (Writer_cancelled exn)`, wake blocked producers, and stop
@@ -213,7 +213,11 @@ Formatter failure and flow write failure have different semantics:
 
 Non-cancellation exceptions from `on_error` are ignored. Cancellation from
 `on_error` is preserved in the writer fiber and closes the writer through the
-writer-cancellation path above.
+writer-cancellation path above. Because `on_error` runs in the writer fiber, it
+must not call `Writer.sink` or `Writer.flush` on the same writer, and it should
+not perform other blocking work that depends on the same writer making progress.
+For flow write failures, the writer transitions to `Closed` and wakes blocked
+producers and flushes before invoking `on_error`.
 
 `flush writer` enqueues a `Flush` command and waits on its promise. The writer
 resolves the flush with:
@@ -296,6 +300,7 @@ Public interfaces must document:
 - sink cancellation is preserved;
 - writer flow write failure closes the writer;
 - writer cancellation closes the writer and wakes blocked producers/flushes;
+- error callbacks are non-reentrant for the same writer;
 - `Block` applies backpressure only while the writer is open;
 - `Drop` increments `dropped_count` when the queue is full;
 - `flush` markers are never dropped;

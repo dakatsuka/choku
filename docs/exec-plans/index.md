@@ -55,6 +55,7 @@ None.
 - [Add Client Convenience Helpers](completed/0040-add-client-convenience-helpers.md)
 - [Implement Server Cookie Support](completed/0041-implement-server-cookie-support.md)
 - [Introduce Router Context](completed/0042-introduce-router-context.md)
+- [Implement Access Log Middleware](completed/0043-implement-access-log-middleware.md)
 
 ## When To Create A Plan
 

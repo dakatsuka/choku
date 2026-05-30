@@ -16,6 +16,7 @@
   test_choku_test
   test_client
   test_router
+  test_access_log
   test_http1
   test_server)
  (libraries
@@ -23,6 +24,7 @@
   choku.test
   alcotest
   eio
+  eio.mock
   eio_main
   unix
   mirage-crypto-rng.unix))
